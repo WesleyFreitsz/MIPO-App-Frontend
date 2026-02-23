@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  SafeAreaView,
 } from "react-native";
 import {
   TrendingUp,
@@ -16,7 +17,6 @@ import {
 } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const StatCard = ({ title, value, type }: any) => (
   <View style={styles.statCard}>
@@ -114,7 +114,9 @@ export default function AdminFinanceScreen() {
 
         <View style={styles.mainBalance}>
           <Text style={styles.balanceLabel}>Saldo em Caixa</Text>
-          <Text style={styles.balanceValue}>R$ {Number(balance).toFixed(2)}</Text>
+          <Text style={styles.balanceValue}>
+            R$ {Number(balance).toFixed(2)}
+          </Text>
         </View>
 
         <View style={styles.statsRow}>

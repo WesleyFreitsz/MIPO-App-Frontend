@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  View,
+  View, // Substituímos o SafeAreaView do react-native por View
   Text,
   StyleSheet,
   ScrollView,
@@ -9,384 +9,537 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
+  useColorScheme,
+  TextInput,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ChevronLeft,
-  MessageCircle,
-  UserPlus,
-  UserCheck,
+  MessageSquare,
   Heart,
+  MessageCircle,
+  X,
 } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { SafeAreaView } from "react-native-safe-area-context";
-
-interface User {
-  id: string;
-  name: string;
-  nickname: string;
-  city: string;
-  avatarUrl: string;
-}
-
-interface Post {
-  id: string;
-  content: string;
-  imageUrl: string | null;
-  createdAt: string;
-  user: User;
-  likeCount: number;
-  commentCount: number;
-  likedByUser: boolean;
-}
-
-const MIPO_COLORS = {
-  primary: "#E11D48",
-  background: "#f8fafc",
-  text: "#1e293b",
-  textLighter: "#64748b",
-  border: "#e2e8f0",
-  white: "#ffffff",
-};
-
-const PostCard = ({ post, onLike }: any) => {
-  return (
-    <View style={styles.postCard}>
-      <Text style={styles.postContent}>{post.content}</Text>
-      {post.imageUrl && (
-        <Image source={{ uri: post.imageUrl }} style={styles.postImage} />
-      )}
-      <View style={styles.postActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onLike(post.id)}
-        >
-          <Heart
-            color={
-              post.likedByUser ? MIPO_COLORS.primary : MIPO_COLORS.textLighter
-            }
-            size={16}
-            fill={post.likedByUser ? MIPO_COLORS.primary : "transparent"}
-          />
-          <Text style={styles.actionText}>{post.likeCount}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
 
 export default function PlayerProfileScreen({ route, navigation }: any) {
   const { userId } = route.params;
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [friendshipStatus, setFriendshipStatus] = useState<string | null>(null);
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
+  const insets = useSafeAreaInsets(); // Usando o insets para controlar o topo e baixo
 
-  // Fetch usuário
+  const theme = {
+    bg: isDark ? "#000000" : "#faf6f1",
+    surface: isDark ? "#121212" : "#ffffff",
+    text: isDark ? "#ffffff" : "#1c1917",
+    textMuted: isDark ? "#a1a1aa" : "#78716c",
+    border: isDark ? "#27272a" : "#e7e5e4",
+    primary: "#c73636",
+  };
+
+  // Modals
+  const [selectedPost, setSelectedPost] = useState<any>(null);
+  const [commentText, setCommentText] = useState("");
+
   const { data: userData, isLoading: userLoading } = useQuery({
     queryKey: ["user", userId],
-    queryFn: async () => {
-      const response = await api.get(`/users/${userId}`);
-      return response.data;
-    },
+    queryFn: async () => (await api.get(`/users/${userId}`)).data,
   });
-
-  // Fetch posts do usuário
-  const { data: postsData, isLoading: postsLoading } = useQuery({
+  const { data: postsData } = useQuery({
     queryKey: ["posts", "user", userId],
-    queryFn: async () => {
-      const response = await api.get(`/posts/user/${userId}`, {
-        params: { skip: 0, take: 20 },
-      });
-      return response.data;
-    },
+    queryFn: async () =>
+      (
+        await api.get(`/posts/user/${userId}`, {
+          params: { skip: 0, take: 20 },
+        })
+      ).data,
   });
 
-  // Fetch status de amizade
+  // Status de Amizade
   const { data: statusData } = useQuery({
     queryKey: ["friendship", userId],
-    queryFn: async () => {
-      const response = await api.get(`/friends/${userId}/status`);
-      return response.data;
-    },
+    queryFn: async () => (await api.get(`/friends/${userId}/status`)).data,
+  });
+  const { data: commentsData, refetch: refetchComments } = useQuery({
+    queryKey: ["comments", selectedPost?.id],
+    queryFn: async () =>
+      (await api.get(`/posts/${selectedPost?.id}/comments`)).data,
+    enabled: !!selectedPost?.id,
   });
 
-  // Mutations
-  const sendFriendRequestMutation = useMutation({
-    mutationFn: () => api.post("/friends/request", { friendId: userId }),
+  const isFriend = statusData?.status === "ACCEPTED";
+  const isPending = statusData?.status === "PENDING";
+
+  // MUTAÇÃO CORRIGIDA DE AMIZADE
+  const toggleFriendshipMutation = useMutation({
+    mutationFn: async () => {
+      // Se já é amigo ou está pendente, queremos DELETAR a amizade/solicitação
+      if (isFriend || isPending) {
+        // Usamos o ID do relacionamento que vem da API, se existir. Senão, tenta a rota padrão
+        const relationshipId = statusData?.id;
+        if (relationshipId) {
+          return api.delete(`/friends/${relationshipId}`);
+        }
+        return api.delete(`/friends/${userId}`);
+      }
+      // Se não é amigo, enviamos a solicitação de amizade
+      return api.post("/friends/request", { friendId: userId });
+    },
     onSuccess: () => {
+      // Força a atualização dos dados na tela e na lista de amigos
       queryClient.invalidateQueries({ queryKey: ["friendship", userId] });
-      Alert.alert("Sucesso", "Solicitação de amizade enviada!");
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
+      queryClient.invalidateQueries({ queryKey: ["friends", "available"] });
     },
     onError: (error: any) => {
       Alert.alert(
-        "Erro",
-        error.response?.data?.message || "Erro ao enviar solicitação",
+        "Aviso",
+        error.response?.data?.message ||
+          "Não foi possível alterar a amizade no momento.",
       );
     },
   });
 
-  const likePostMutation = useMutation({
-    mutationFn: (postId: string) => api.post(`/posts/${postId}/like`),
+  const toggleLikeMutation = useMutation({
+    mutationFn: (post: any) =>
+      post.likedByUser
+        ? api.delete(`/posts/${post.id}/like`)
+        : api.post(`/posts/${post.id}/like`),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", userId] });
+      if (selectedPost)
+        setSelectedPost({
+          ...selectedPost,
+          likedByUser: !selectedPost.likedByUser,
+          likeCount: selectedPost.likedByUser
+            ? selectedPost.likeCount - 1
+            : selectedPost.likeCount + 1,
+        });
+    },
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: (content: string) =>
+      api.post(`/posts/${selectedPost?.id}/comments`, { content }),
+    onSuccess: () => {
+      setCommentText("");
+      refetchComments();
       queryClient.invalidateQueries({ queryKey: ["posts", "user", userId] });
     },
   });
 
   const handleSendMessage = async () => {
     try {
-      const chatResponse = await api.post(`/chats/private/${userId}`);
+      const res = await api.post(`/chats/private/${userId}`);
       navigation.navigate("ChatDetail", {
-        chatId: chatResponse.data.id,
+        chatId: res.data.id,
         name: userData?.nickname || userData?.name,
       });
-    } catch (error: any) {
+    } catch {
       Alert.alert("Erro", "Erro ao abrir chat");
     }
   };
 
-  const handleAddFriend = () => {
-    sendFriendRequestMutation.mutate();
-  };
-
-  if (userLoading) {
+  if (userLoading)
     return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
-      </SafeAreaView>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.bg, paddingTop: insets.top },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
     );
-  }
-
-  const isFriend = statusData?.status === "ACCEPTED";
-  const isPending = statusData?.status === "PENDING";
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft color={MIPO_COLORS.text} size={24} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Perfil</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView>
-        {/* PERFIL */}
-        <View style={styles.profileSection}>
-          <Image
-            source={{
-              uri:
-                userData?.avatarUrl ||
-                `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.name}`,
-            }}
-            style={styles.avatar}
-          />
-          <Text style={styles.name}>
-            {userData?.nickname || userData?.name}
-          </Text>
-          <Text style={styles.city}>{userData?.city}</Text>
-
-          {/* BOTÕES DE AÇÃO */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.messageButton}
-              onPress={handleSendMessage}
-            >
-              <MessageCircle color={MIPO_COLORS.white} size={18} />
-              <Text style={styles.messageButtonText}>Enviar Mensagem</Text>
+    // APLICANDO O PADDING TOP DO INSETS AQUI NA VIEW PRINCIPAL
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.bg, paddingTop: insets.top },
+      ]}
+    >
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* HEADER */}
+        <View style={[styles.header, { backgroundColor: theme.bg }]}>
+          <View style={styles.headerTop}>
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <ChevronLeft color={theme.text} size={28} />
             </TouchableOpacity>
+            <Text style={[styles.headerNickname, { color: theme.text }]}>
+              @{userData?.nickname || userData?.name}
+            </Text>
+            <View style={{ width: 28 }} />
+          </View>
 
-            {!isFriend && !isPending && currentUser?.id !== userId && (
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={handleAddFriend}
-                disabled={sendFriendRequestMutation.isPending}
-              >
-                <UserPlus color={MIPO_COLORS.white} size={18} />
-                <Text style={styles.addButtonText}>Adicionar Amigo</Text>
-              </TouchableOpacity>
-            )}
+          <View style={styles.profileMain}>
+            <LinearGradient
+              colors={["#c73636", "#e6683c", "#f09433"]}
+              style={styles.gradientBorder}
+            >
+              <Image
+                source={{
+                  uri:
+                    userData?.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.name}`,
+                }}
+                style={[styles.avatar, { borderColor: theme.bg }]}
+              />
+            </LinearGradient>
 
-            {isPending && (
-              <View style={[styles.addButton, styles.pendingButton]}>
-                <UserCheck color={MIPO_COLORS.white} size={18} />
-                <Text style={styles.addButtonText}>Solicitação Enviada</Text>
+            <View style={styles.statsContainer}>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, { color: theme.text }]}>
+                  {postsData?.data?.length || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                  Posts
+                </Text>
               </View>
-            )}
-
-            {isFriend && (
-              <View style={[styles.addButton, styles.friendButton]}>
-                <UserCheck color={MIPO_COLORS.white} size={18} />
-                <Text style={styles.addButtonText}>Amigo</Text>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, { color: theme.text }]}>
+                  {userData?.achievements?.length || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                  Troféus
+                </Text>
               </View>
+            </View>
+          </View>
+
+          <View style={styles.bioContainer}>
+            <Text style={[styles.bioName, { color: theme.text }]}>
+              {userData?.name}
+            </Text>
+            <Text style={[styles.bioCity, { color: theme.textMuted }]}>
+              {userData?.city}
+            </Text>
+            {userData?.bio && (
+              <Text style={{ color: theme.text, marginTop: 8 }}>
+                {userData.bio}
+              </Text>
             )}
           </View>
-        </View>
 
-        {/* POSTS */}
-        <View style={styles.postsSection}>
-          <Text style={styles.sectionTitle}>
-            Posts ({postsData?.data?.length || 0})
-          </Text>
-
-          {postsLoading ? (
-            <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
-          ) : postsData?.data && postsData.data.length > 0 ? (
-            <FlatList
-              data={postsData.data}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <PostCard
-                  post={item}
-                  onLike={() => likePostMutation.mutate(item.id)}
-                />
-              )}
-              scrollEnabled={false}
-            />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Nenhum post</Text>
+          {/* BOTOES DE AÇÃO */}
+          {currentUser?.id !== userId && (
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.editBtn,
+                  {
+                    backgroundColor: isFriend ? theme.surface : theme.primary,
+                    borderColor: isFriend ? theme.border : theme.primary,
+                  },
+                ]}
+                onPress={() => toggleFriendshipMutation.mutate()}
+                disabled={toggleFriendshipMutation.isPending}
+              >
+                {toggleFriendshipMutation.isPending ? (
+                  <ActivityIndicator
+                    color={isFriend ? theme.text : "#fff"}
+                    size="small"
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.editBtnText,
+                      { color: isFriend ? theme.text : "#fff" },
+                    ]}
+                  >
+                    {isFriend
+                      ? "Deixar de seguir"
+                      : isPending
+                        ? "Solicitado"
+                        : "Seguir"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.editBtn,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}
+                onPress={handleSendMessage}
+              >
+                <Text style={[styles.editBtnText, { color: theme.text }]}>
+                  Mensagem
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
+
+        {/* GRID DE POSTS */}
+        <View style={styles.postsGrid}>
+          {postsData?.data?.map((item: any) => (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.gridItem, { borderColor: theme.border }]}
+              onPress={() => setSelectedPost(item)}
+            >
+              {item.imageUrl ? (
+                <Image
+                  source={{ uri: item.imageUrl }}
+                  style={styles.gridImage}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.gridTextOnly,
+                    { backgroundColor: theme.surface },
+                  ]}
+                >
+                  <Text
+                    style={{ color: theme.text, fontSize: 10 }}
+                    numberOfLines={4}
+                  >
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
       </ScrollView>
-    </SafeAreaView>
+
+      {/* MODAL POST TELA CHEIA */}
+      <Modal visible={!!selectedPost} animationType="slide">
+        {/* APLICANDO O INSETS NO MODAL TAMBÉM */}
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
+          <View
+            style={[styles.modalHeader, { borderBottomColor: theme.border }]}
+          >
+            <TouchableOpacity onPress={() => setSelectedPost(null)}>
+              <X color={theme.text} size={24} />
+            </TouchableOpacity>
+            <Text
+              style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
+            >
+              Post
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <FlatList
+            data={commentsData?.data || []}
+            keyExtractor={(i) => i.id}
+            ListHeaderComponent={() => (
+              <View
+                style={{
+                  paddingBottom: 16,
+                  borderBottomWidth: 1,
+                  borderBottomColor: theme.border,
+                }}
+              >
+                <View style={styles.postFullHeader}>
+                  <Image
+                    source={{
+                      uri:
+                        userData?.avatarUrl ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.name}`,
+                    }}
+                    style={styles.postAvatar}
+                  />
+                  <Text style={[styles.postName, { color: theme.text }]}>
+                    {userData?.nickname || userData?.name}
+                  </Text>
+                </View>
+                {selectedPost?.imageUrl && (
+                  <Image
+                    source={{ uri: selectedPost.imageUrl }}
+                    style={styles.postFullImage}
+                    resizeMode="contain"
+                  />
+                )}
+                <View style={styles.postActions}>
+                  <TouchableOpacity
+                    onPress={() => toggleLikeMutation.mutate(selectedPost)}
+                  >
+                    <Heart
+                      size={26}
+                      color={
+                        selectedPost?.likedByUser ? theme.primary : theme.text
+                      }
+                      fill={
+                        selectedPost?.likedByUser
+                          ? theme.primary
+                          : "transparent"
+                      }
+                    />
+                  </TouchableOpacity>
+                  <MessageCircle
+                    size={26}
+                    color={theme.text}
+                    style={{ marginLeft: 16 }}
+                  />
+                </View>
+                <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+                  <Text style={{ color: theme.text, fontWeight: "bold" }}>
+                    {selectedPost?.likeCount} curtidas
+                  </Text>
+                  <Text style={{ color: theme.text, marginTop: 4 }}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {userData?.nickname}{" "}
+                    </Text>
+                    {selectedPost?.content}
+                  </Text>
+                </View>
+              </View>
+            )}
+            renderItem={({ item }: any) => (
+              <View style={styles.commentItem}>
+                <Image
+                  source={{
+                    uri:
+                      item.user.avatarUrl ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                  }}
+                  style={styles.commentAvatar}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: theme.text }}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {item.user.nickname || item.user.name}{" "}
+                    </Text>
+                    {item.content}
+                  </Text>
+                </View>
+              </View>
+            )}
+          />
+          {/* INPUT DE COMENTÁRIO */}
+          <View
+            style={[
+              styles.commentInputContainer,
+              {
+                backgroundColor: theme.surface,
+                borderTopColor: theme.border,
+                paddingBottom: insets.bottom + 8, // Mantém seguro embaixo
+              },
+            ]}
+          >
+            <Image
+              source={{
+                uri:
+                  currentUser?.avatarUrl ||
+                  `https://api.dicebear.com/7.x/initials/svg?seed=${currentUser?.name}`,
+              }}
+              style={styles.commentInputAvatar}
+            />
+            <TextInput
+              style={[styles.commentInput, { color: theme.text }]}
+              placeholder="Adicione um comentário..."
+              placeholderTextColor={theme.textMuted}
+              value={commentText}
+              onChangeText={setCommentText}
+            />
+            <TouchableOpacity
+              onPress={() =>
+                commentText.trim() && commentMutation.mutate(commentText)
+              }
+            >
+              <Text style={{ color: theme.primary, fontWeight: "bold" }}>
+                Publicar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: MIPO_COLORS.background,
-  },
-  header: {
+  container: { flex: 1 },
+  header: { padding: 16 },
+  headerTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: MIPO_COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
+    marginBottom: 20,
   },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-  },
-  profileSection: {
-    backgroundColor: MIPO_COLORS.white,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 12,
-  },
-  name: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: MIPO_COLORS.text,
-  },
-  city: {
-    fontSize: 14,
-    color: MIPO_COLORS.textLighter,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  actionButtons: {
-    width: "100%",
-    gap: 8,
-  },
-  messageButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  headerNickname: { fontSize: 20, fontWeight: "bold" },
+  profileMain: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  gradientBorder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     justifyContent: "center",
-    paddingVertical: 12,
-    backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 8,
-    gap: 8,
-  },
-  messageButtonText: {
-    color: MIPO_COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  addButton: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    backgroundColor: MIPO_COLORS.primary,
+  },
+  avatar: { width: 84, height: 84, borderRadius: 42, borderWidth: 3 },
+  statsContainer: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginLeft: 20,
+  },
+  statBox: { alignItems: "center" },
+  statNumber: { fontSize: 18, fontWeight: "bold" },
+  statLabel: { fontSize: 13 },
+  bioContainer: { marginBottom: 16 },
+  bioName: { fontSize: 15, fontWeight: "600" },
+  bioCity: { fontSize: 14, marginTop: 2 },
+  actionButtonsRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  editBtn: {
+    flex: 1,
+    paddingVertical: 8,
     borderRadius: 8,
-    gap: 8,
-  },
-  addButtonText: {
-    color: MIPO_COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  pendingButton: {
-    backgroundColor: MIPO_COLORS.textLighter,
-  },
-  friendButton: {
-    backgroundColor: "#10b981",
-  },
-  postsSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-    marginBottom: 12,
-  },
-  postCard: {
-    backgroundColor: MIPO_COLORS.white,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
     borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
-  },
-  postContent: {
-    fontSize: 14,
-    color: MIPO_COLORS.text,
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  postImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  postActions: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  actionButton: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    justifyContent: "center",
   },
-  actionText: {
-    fontSize: 12,
-    color: MIPO_COLORS.textLighter,
-  },
-  emptyContainer: {
-    paddingVertical: 20,
+  editBtnText: { fontSize: 14, fontWeight: "600" },
+
+  postsGrid: { flexDirection: "row", flexWrap: "wrap" },
+  gridItem: { width: "33.33%", aspectRatio: 1, borderWidth: 0.5 },
+  gridImage: { width: "100%", height: "100%" },
+  gridTextOnly: {
+    width: "100%",
+    height: "100%",
+    padding: 8,
     justifyContent: "center",
     alignItems: "center",
   },
-  emptyText: {
-    fontSize: 14,
-    color: MIPO_COLORS.textLighter,
+
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
   },
+  postFullHeader: { flexDirection: "row", alignItems: "center", padding: 12 },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  postName: { fontWeight: "bold", fontSize: 14 },
+  postFullImage: { width: "100%", height: 350, backgroundColor: "#000" },
+  postActions: { flexDirection: "row", paddingHorizontal: 16, marginTop: 12 },
+  commentItem: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  commentAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
+  commentInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderTopWidth: 1,
+  },
+  commentInputAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 10,
+  },
+  commentInput: { flex: 1, height: 40 },
 });

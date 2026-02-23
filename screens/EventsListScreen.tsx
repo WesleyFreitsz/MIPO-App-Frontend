@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
   Alert,
+  SafeAreaView,
 } from "react-native";
 import {
   Plus,
@@ -26,7 +27,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
@@ -298,7 +298,11 @@ export default function EventsListScreen({ navigation }: any) {
                     onPress={() => {
                       setModalVisible(false);
                       navigation.navigate("ChatDetail", {
-                        name: selectedEvent.title,
+                        chatId: selectedEvent.chatId, // OBRIGATÓRIO: ID do chat do banco de dados
+                        name: selectedEvent.title, // Nome do Evento
+                        type: "EVENT", // OBRIGATÓRIO: Muda o cabeçalho para evento
+                        avatar: selectedEvent.bannerUrl, // Foto do chat será o banner
+                        targetId: selectedEvent.id, // Para poder clicar na foto e voltar pro evento
                       });
                     }}
                   >

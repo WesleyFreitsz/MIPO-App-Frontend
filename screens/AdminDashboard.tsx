@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  SafeAreaView,
 } from "react-native";
 import {
   Users,
@@ -16,8 +17,8 @@ import {
   Bell,
   CheckSquare,
   PlusCircle,
+  ShieldAlert, // <--- Importação do ícone de Denúncia
 } from "lucide-react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const AdminMenuCard = ({ title, icon: Icon, color, onPress }: any) => (
   <TouchableOpacity style={styles.menuCard} onPress={onPress}>
@@ -31,7 +32,10 @@ const AdminMenuCard = ({ title, icon: Icon, color, onPress }: any) => (
 export default function AdminDashboard({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.welcome}>Painel Administrativo 🛡️</Text>
 
         <View style={styles.grid}>
@@ -48,10 +52,16 @@ export default function AdminDashboard({ navigation }: any) {
             onPress={() => navigation.navigate("AdminEventsManagement")}
           />
           <AdminMenuCard
+            title="Denúncias" // <--- Novo botão de Denúncias
+            icon={ShieldAlert}
+            color="#ef4444" // Cor de atenção/perigo
+            onPress={() => navigation.navigate("AdminReports")}
+          />
+          <AdminMenuCard
             title="Notificações"
             icon={Bell}
             color="#06b6d4"
-            onPress={() => navigation.navigate("AdminNotifications")} // Atualize aqui
+            onPress={() => navigation.navigate("AdminNotifications")}
           />
           <AdminMenuCard
             title="Financeiro"
@@ -88,12 +98,6 @@ export default function AdminDashboard({ navigation }: any) {
             icon={Trophy}
             color="#ec4899"
             onPress={() => navigation.navigate("AdminAchievements")}
-          />
-          <AdminMenuCard
-            title="Notificações"
-            icon={Bell}
-            color="#06b6d4"
-            onPress={() => {}}
           />
         </View>
       </ScrollView>

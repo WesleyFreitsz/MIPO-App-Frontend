@@ -10,20 +10,13 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
-import { ChevronLeft, Plus, Check } from "lucide-react-native";
+import { ChevronLeft, Plus, Check, Camera } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { SafeAreaView } from "react-native-safe-area-context";
-
-interface Friend {
-  id: string;
-  name: string;
-  nickname: string;
-  avatarUrl: string;
-  city: string;
-}
+import { useQuery } from "@tanstack/react-query";
 
 const MIPO_COLORS = {
   primary: "#E11D48",
@@ -34,47 +27,39 @@ const MIPO_COLORS = {
   white: "#ffffff",
 };
 
-const FriendCheckbox = ({ friend, isSelected, onToggle }: any) => {
-  return (
-    <TouchableOpacity
-      style={styles.friendItem}
-      onPress={() => onToggle(friend.id)}
-    >
-      <Image
-        source={{
-          uri:
-            friend.avatarUrl ||
-            `https://api.dicebear.com/7.x/initials/svg?seed=${friend.name}`,
-        }}
-        style={styles.friendAvatar}
-      />
-      <View style={styles.friendInfo}>
-        <Text style={styles.friendName}>{friend.nickname || friend.name}</Text>
-        <Text style={styles.friendCity}>{friend.city}</Text>
-      </View>
-      <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-        {isSelected && <Check color={MIPO_COLORS.white} size={16} />}
-      </View>
-    </TouchableOpacity>
-  );
-};
+const FriendCheckbox = ({ friend, isSelected, onToggle }: any) => (
+  <TouchableOpacity
+    style={styles.friendItem}
+    onPress={() => onToggle(friend.id)}
+  >
+    <Image
+      source={{
+        uri:
+          friend.avatarUrl ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${friend.name}`,
+      }}
+      style={styles.friendAvatar}
+    />
+    <View style={styles.friendInfo}>
+      <Text style={styles.friendName}>{friend.nickname || friend.name}</Text>
+    </View>
+    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+      {isSelected && <Check color={MIPO_COLORS.white} size={16} />}
+    </View>
+  </TouchableOpacity>
+);
 
 export default function CreateChatGroupScreen({ navigation }: any) {
-  const { user } = useAuth();
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
+  const [groupImage, setGroupImage] = useState<string | null>(null);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Fetch amigos do usuário
   const { data: friendsData, isLoading } = useQuery({
     queryKey: ["friends", "list"],
-    queryFn: async () => {
-      const response = await api.get("/friends", {
-        params: { skip: 0, take: 100 },
-      });
-      return response.data;
-    },
+    queryFn: async () =>
+      (await api.get("/friends", { params: { skip: 0, take: 100 } })).data,
   });
 
   const handleToggleFriend = (friendId: string) => {
@@ -85,26 +70,52 @@ export default function CreateChatGroupScreen({ navigation }: any) {
     );
   };
 
-  const handleCreateGroup = async () => {
-    if (!groupName.trim()) {
-      Alert.alert("Erro", "O nome do grupo é obrigatório");
-      return;
+  const uploadImageAsync = async (uri: string) => {
+    try {
+      const formData = new FormData();
+      const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      // @ts-ignore
+      formData.append("file", {
+        uri,
+        name: filename,
+        type: match ? `image/${match[1]}` : "image/jpeg",
+      });
+      const res = await api.post("/uploads/avatar", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.url;
+    } catch {
+      return null;
     }
+  };
 
-    if (selectedFriends.length === 0) {
-      Alert.alert("Erro", "Selecione pelo menos um amigo para o grupo");
-      return;
-    }
+  const pickImage = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!res.canceled) setGroupImage(res.assets[0].uri);
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupName.trim())
+      return Alert.alert("Erro", "O nome do grupo é obrigatório");
+    if (selectedFriends.length === 0)
+      return Alert.alert("Erro", "Selecione pelo menos um amigo");
 
     setIsCreating(true);
+    let finalImageUrl = null;
+    if (groupImage) finalImageUrl = await uploadImageAsync(groupImage);
+
     try {
-      // Primeiro, criar o chat
       const chatResponse = await api.post("/chats/group", {
         name: groupName,
         description: groupDescription || null,
+        imageUrl: finalImageUrl,
       });
-
-      // Depois, adicionar os membros
       await api.post(`/chats/${chatResponse.data.id}/members`, {
         memberIds: selectedFriends,
       });
@@ -112,19 +123,17 @@ export default function CreateChatGroupScreen({ navigation }: any) {
       Alert.alert("Sucesso", "Grupo criado com sucesso!", [
         {
           text: "OK",
-          onPress: () => {
+          onPress: () =>
             navigation.navigate("ChatDetail", {
               chatId: chatResponse.data.id,
               name: groupName,
-            });
-          },
+              type: "GROUP",
+              avatar: finalImageUrl,
+            }),
         },
       ]);
     } catch (error: any) {
-      Alert.alert(
-        "Erro",
-        error.response?.data?.message || "Erro ao criar grupo",
-      );
+      Alert.alert("Erro", "Erro ao criar grupo");
     } finally {
       setIsCreating(false);
     }
@@ -132,54 +141,58 @@ export default function CreateChatGroupScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <ChevronLeft color={MIPO_COLORS.text} size={24} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Criar Grupo de Chat</Text>
+        <Text style={styles.headerTitle}>Novo Grupo</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* CONTEÚDO */}
       <ScrollView style={styles.content}>
-        {/* INPUT DE NOME */}
+        <View style={{ alignItems: "center", marginBottom: 20 }}>
+          <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+            {groupImage ? (
+              <Image source={{ uri: groupImage }} style={styles.imagePreview} />
+            ) : (
+              <Camera color={MIPO_COLORS.textLighter} size={32} />
+            )}
+          </TouchableOpacity>
+          <Text style={{ color: MIPO_COLORS.textLighter, marginTop: 8 }}>
+            Foto do Grupo
+          </Text>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Nome do Grupo *</Text>
           <TextInput
             style={styles.input}
-            placeholder="Digite o nome do grupo"
+            placeholder="Nome do grupo"
             value={groupName}
             onChangeText={setGroupName}
-            placeholderTextColor={MIPO_COLORS.textLighter}
           />
         </View>
 
-        {/* INPUT DE DESCRIÇÃO */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Descrição (Opcional)</Text>
+          <Text style={styles.sectionTitle}>Descrição</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            placeholder="Descrição do grupo"
+            placeholder="Descrição"
             value={groupDescription}
             onChangeText={setGroupDescription}
-            placeholderTextColor={MIPO_COLORS.textLighter}
             multiline
-            numberOfLines={3}
           />
         </View>
 
-        {/* SELEÇÃO DE AMIGOS */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            Selecione os Amigos ({selectedFriends.length})
+            Selecionar Amigos ({selectedFriends.length})
           </Text>
-
           {isLoading ? (
             <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
-          ) : friendsData?.data && friendsData.data.length > 0 ? (
+          ) : (
             <FlatList
-              data={friendsData.data}
+              data={friendsData?.data}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <FriendCheckbox
@@ -190,31 +203,21 @@ export default function CreateChatGroupScreen({ navigation }: any) {
               )}
               scrollEnabled={false}
             />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                Você não tem amigos adicionados
-              </Text>
-            </View>
           )}
         </View>
       </ScrollView>
 
-      {/* BOTÃO DE CRIAR */}
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[
-            styles.createButton,
-            isCreating && styles.createButtonDisabled,
-          ]}
+          style={[styles.createButton, isCreating && { opacity: 0.6 }]}
           onPress={handleCreateGroup}
           disabled={isCreating}
         >
           {isCreating ? (
-            <ActivityIndicator color={MIPO_COLORS.white} size="small" />
+            <ActivityIndicator color={MIPO_COLORS.white} />
           ) : (
             <>
-              <Plus color={MIPO_COLORS.white} size={18} />
+              <Plus color="#fff" size={18} />
               <Text style={styles.createButtonText}>Criar Grupo</Text>
             </>
           )}
@@ -225,83 +228,51 @@ export default function CreateChatGroupScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: MIPO_COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: MIPO_COLORS.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    padding: 16,
     backgroundColor: MIPO_COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
+    borderColor: MIPO_COLORS.border,
   },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
+  headerTitle: { fontSize: 16, fontWeight: "600", color: MIPO_COLORS.text },
+  content: { flex: 1, paddingVertical: 16 },
+  imagePicker: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#e2e8f0",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
   },
-  content: {
-    flex: 1,
-    paddingVertical: 16,
-  },
-  section: {
-    marginHorizontal: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-    marginBottom: 8,
-  },
+  imagePreview: { width: "100%", height: "100%" },
+  section: { marginHorizontal: 16, marginBottom: 20 },
+  sectionTitle: { fontSize: 14, fontWeight: "600", marginBottom: 8 },
   input: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 12,
     backgroundColor: MIPO_COLORS.white,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: MIPO_COLORS.border,
-    fontSize: 14,
-    color: MIPO_COLORS.text,
   },
-  textArea: {
-    height: 80,
-    textAlignVertical: "top",
-  },
+  textArea: { height: 80, textAlignVertical: "top" },
   friendItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    padding: 12,
     backgroundColor: MIPO_COLORS.white,
     borderRadius: 8,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: MIPO_COLORS.border,
   },
-  friendAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginRight: 12,
-  },
-  friendInfo: {
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-  },
-  friendCity: {
-    fontSize: 12,
-    color: MIPO_COLORS.textLighter,
-    marginTop: 2,
-  },
+  friendAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  friendInfo: { flex: 1 },
+  friendName: { fontSize: 14, fontWeight: "600" },
   checkbox: {
     width: 24,
     height: 24,
@@ -315,37 +286,19 @@ const styles = StyleSheet.create({
     backgroundColor: MIPO_COLORS.primary,
     borderColor: MIPO_COLORS.primary,
   },
-  emptyContainer: {
-    paddingVertical: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 14,
-    color: MIPO_COLORS.textLighter,
-  },
   footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    padding: 16,
     backgroundColor: MIPO_COLORS.white,
     borderTopWidth: 1,
-    borderTopColor: MIPO_COLORS.border,
+    borderColor: MIPO_COLORS.border,
   },
   createButton: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
+    padding: 12,
     backgroundColor: MIPO_COLORS.primary,
     borderRadius: 8,
     gap: 8,
   },
-  createButtonDisabled: {
-    opacity: 0.6,
-  },
-  createButtonText: {
-    color: MIPO_COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  createButtonText: { color: MIPO_COLORS.white, fontWeight: "600" },
 });

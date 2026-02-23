@@ -175,22 +175,6 @@ export default function HomeScreen() {
           <View style={styles.bannerOverlay} />
         </View>
 
-        <View style={styles.statsGrid}>
-          {[
-            { icon: Users, label: "Jogadores", value: "248" },
-            { icon: Calendar, label: "Eventos", value: "12" },
-            { icon: TrendingUp, label: "Partidas", value: "1.2k" },
-          ].map((stat, i) => (
-            <View key={i} style={styles.statCard}>
-              <View style={styles.statIconWrap}>
-                <stat.icon size={20} color={COLORS.primary} />
-              </View>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
-          ))}
-        </View>
-
         {/* NOSSOS JOGOS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -307,18 +291,6 @@ export default function HomeScreen() {
               ))}
             </ScrollView>
           )}
-        </View>
-
-        <View style={[styles.section, { marginBottom: 30 }]}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>🏠 Salas Recentes</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Salas")}>
-              <Text style={styles.seeMore}>Ir para Salas</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.emptyText}>
-            Explora a aba de Salas para encontrar parceiros!
-          </Text>
         </View>
       </ScrollView>
 
@@ -438,7 +410,11 @@ export default function HomeScreen() {
                     onPress={() => {
                       setModalVisible(false);
                       navigation.navigate("ChatDetail", {
+                        chatId: selectedEvent.chatId, // ESSENCIAL: ID do chat do banco de dados
                         name: selectedEvent.title,
+                        type: "EVENT", // ESSENCIAL: Define que é um evento
+                        avatar: selectedEvent.bannerUrl,
+                        targetId: selectedEvent.id, // ESSENCIAL: ID do Evento para buscar os detalhes
                       });
                     }}
                   >
@@ -478,8 +454,13 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#faf6f1" },
-  bannerContainer: { height: 230, width: width, overflow: "hidden" },
-  bannerImage: { width: width, height: 230 },
+  bannerContainer: {
+    marginTop: 40,
+    height: 180,
+    width: width,
+    overflow: "hidden",
+  },
+  bannerImage: { width: width, height: 180 },
   bannerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.1)",

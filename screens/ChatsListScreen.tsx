@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,33 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useWebSocketChat } from "../hooks/useWebSocketChat";
 
 export default function ChatsListScreen({ navigation }: any) {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+
+  const { socket } = useWebSocketChat();
+
+  // 👇 ATUALIZAÇÃO DA LISTA DE CHATS VIA WEBSOCKET 👇
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleListUpdate = () => {
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+    };
+
+    socket.on("chat:list-update", handleListUpdate);
+
+    return () => {
+      socket.off("chat:list-update", handleListUpdate);
+    };
+  }, [socket, queryClient]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["chats"],
@@ -26,7 +47,7 @@ export default function ChatsListScreen({ navigation }: any) {
   const chats = data?.data || [];
 
   const renderItem = ({ item }: any) => {
-    // For private chats, find the other user
+    // Para chats privados, encontrar o outro usuário
     const otherMember = item.members?.find((m: any) => m.userId !== user?.id);
     const title =
       item.type === "PRIVATE"
@@ -82,14 +103,21 @@ export default function ChatsListScreen({ navigation }: any) {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingTop: insets.top,
+        }}
+      >
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <FlatList
         data={chats}
         keyExtractor={(item) => item.id}

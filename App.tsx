@@ -32,7 +32,7 @@ import SocialScreen from "./screens/SocialScreen";
 import ChatDetailScreen from "./screens/ChatDetailScreen";
 import EventsListScreen from "./screens/EventsListScreen";
 import CreateChatGroupScreen from "./screens/CreateChatGroupScreen";
-import CreateRoomScreen from "./screens/CreateRoomScreen";
+
 import PlayerProfileScreen from "./screens/PlayerProfileScreen";
 import GameDetailScreen from "./screens/GameDetailScreen";
 
@@ -46,7 +46,8 @@ import AdminApprovalsScreen from "./screens/AdminApprovalsScreen";
 import AdminAchievementsScreen from "./screens/AdminAchievementsScreen";
 import AdminCreateEventScreen from "./screens/AdminCreateEventScreen";
 import AdminSendNotificationScreen from "./screens/AdminSendNotificationScreen";
-import AdminEventsManagementScreen from "./screens/AdminEventsManagementScreen"; // <--- NOVA TELA
+import AdminEventsManagementScreen from "./screens/AdminEventsManagementScreen";
+import AdminReportsScreen from "./screens/AdminReportsScreen"; // <--- NOVA TELA IMPORTADA
 import GamesListScreen from "./screens/GameListScreen";
 
 const queryClient = new QueryClient();
@@ -56,7 +57,7 @@ const Tab = createBottomTabNavigator();
 const THEME = {
   primary: "#c73636",
   primaryDark: "#9f1d1d",
-  text: "#1c1917",
+  text: "#FFF",
   textMuted: "#78716c",
   background: "#faf6f1",
 };
@@ -100,14 +101,14 @@ function TabNavigator() {
           headerShown: false,
         }}
       />
-      <Tab.Screen
+      {/* <Tab.Screen
         name="Salas"
         component={RoomsScreen}
         options={{
           tabBarIcon: ({ color }) => <DoorOpen color={color} size={22} />,
           headerShown: false,
         }}
-      />
+      /> */}
 
       {/* ABA EXCLUSIVA DO ADMIN NO TAB BAR */}
       {user?.role === "ADMIN" && (
@@ -179,7 +180,7 @@ function Routes() {
         headerStyle: { backgroundColor: THEME.primary },
         headerTintColor: "#fff",
         headerTitleStyle: { fontWeight: "bold", fontSize: 18 },
-        headerBackTitleVisible: false,
+        headerBackTitle: "",
         cardStyle: { backgroundColor: THEME.background },
       }}
     >
@@ -201,11 +202,7 @@ function Routes() {
         component={CreateChatGroupScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="CriarSala"
-        component={CreateRoomScreen}
-        options={{ title: "Criar Sala" }}
-      />
+
       <Stack.Screen
         name="PlayerProfile"
         component={PlayerProfileScreen}
@@ -269,6 +266,14 @@ function Routes() {
         component={AdminSendNotificationScreen}
         options={{ title: "Notificações" }}
       />
+
+      {/* REGISTRO DA TELA DE DENÚNCIAS */}
+      <Stack.Screen
+        name="AdminReports"
+        component={AdminReportsScreen}
+        options={{ headerShown: false }} // O header já é customizado dentro da tela
+      />
+
       <Stack.Screen
         name="GamesList"
         component={GamesListScreen}

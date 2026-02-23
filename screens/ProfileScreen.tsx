@@ -10,731 +10,797 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  useColorScheme,
   Modal,
-  Platform,
-} from "react-native";
-import {
   SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import {
-  Camera,
-  MapPin,
-  AtSign,
   LogOut,
-  Plus,
+  Wallet,
+  Camera,
+  AtSign,
+  MapPin,
+  X,
   Heart,
   MessageCircle,
-  X,
+  FileText,
+  User as UserIcon,
+  MessageSquare,
 } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import * as ImagePicker from "expo-image-picker";
 
-const MIPO_COLORS = {
-  primary: "#c73636",
-  background: "#faf6f1",
-  text: "#1c1917",
-  textLighter: "#78716c",
-  border: "#e7e5e4",
-  white: "#ffffff",
-};
-
-interface Post {
-  id: string;
-  content: string;
-  imageUrl: string | null;
-  createdAt: string;
-  likeCount: number;
-  commentCount: number;
-  likedByUser: boolean;
-}
-
-const PostCard = ({ post, onLike, onDelete }: any) => {
-  return (
-    <View style={styles.postCard}>
-      <Text style={styles.postContent}>{post.content}</Text>
-      {post.imageUrl && (
-        <Image source={{ uri: post.imageUrl }} style={styles.postImage} />
-      )}
-      <View style={styles.postActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onLike(post.id)}
-        >
-          <Heart
-            color={
-              post.likedByUser ? MIPO_COLORS.primary : MIPO_COLORS.textLighter
-            }
-            size={16}
-            fill={post.likedByUser ? MIPO_COLORS.primary : "transparent"}
-          />
-          <Text style={styles.actionText}>{post.likeCount}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <MessageCircle color={MIPO_COLORS.textLighter} size={16} />
-          <Text style={styles.actionText}>{post.commentCount}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onDelete(post.id)}>
-          <X color={MIPO_COLORS.textLighter} size={16} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-export default function ProfileScreen({ route }: any) {
+export default function ProfileScreen({ route, navigation }: any) {
   const { user, signOut, refreshUser } = useAuth();
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState(route?.params?.editMode || false);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
-  const [postContent, setPostContent] = useState("");
-  const [postImage, setPostImage] = useState<string | null>(null);
-  const [isCreatingPost, setIsCreatingPost] = useState(false);
-
-  // Estados do perfil
-  const [nickname, setNickname] = useState(user?.nickname || "");
-  const [city, setCity] = useState(user?.city || "");
-  const [image, setImage] = useState(user?.avatarUrl || null);
-  const [isUploading, setIsUploading] = useState(false);
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    if (user?.nickname !== nickname) {
-      setNickname(user?.nickname || "");
-    }
-    if (user?.city !== city) {
-      setCity(user?.city || "");
-    }
-    // Aceita tanto a URL antiga (http) quanto a nova string Base64 (data:)
-    if (user?.avatarUrl) {
-      setImage(user.avatarUrl);
-    }
-  }, [user?.id]);
+  const theme = {
+    bg: isDark ? "#000000" : "#faf6f1",
+    surface: isDark ? "#121212" : "#ffffff",
+    text: isDark ? "#ffffff" : "#1c1917",
+    textMuted: isDark ? "#a1a1aa" : "#78716c",
+    border: isDark ? "#27272a" : "#e7e5e4",
+    primary: "#c73636",
+  };
+
+  const [editMode, setEditMode] = useState(route?.params?.editMode || false);
+  const [name, setName] = useState(user?.name || "");
+  const [nickname, setNickname] = useState(user?.nickname || "");
+  const [city, setCity] = useState(user?.city || "");
+  const [bio, setBio] = useState(user?.bio || "");
+  const [image, setImage] = useState(user?.avatarUrl || null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Modals
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<any>(null);
+  const [commentText, setCommentText] = useState("");
+
+  const { data: postsData } = useQuery({
+    queryKey: ["posts", "user", user?.id],
+    queryFn: async () =>
+      (
+        await api.get(`/posts/user/${user?.id}`, {
+          params: { skip: 0, take: 20 },
+        })
+      ).data,
+  });
+  const { data: friendsData } = useQuery({
+    queryKey: ["friends", user?.id],
+    queryFn: async () =>
+      (await api.get("/friends", { params: { skip: 0, take: 50 } })).data,
+  });
+
+  const { data: commentsData, refetch: refetchComments } = useQuery({
+    queryKey: ["comments", selectedPost?.id],
+    queryFn: async () =>
+      (await api.get(`/posts/${selectedPost?.id}/comments`)).data,
+    enabled: !!selectedPost?.id,
+  });
+
+  const toggleLikeMutation = useMutation({
+    mutationFn: (post: any) =>
+      post.likedByUser
+        ? api.delete(`/posts/${post.id}/like`)
+        : api.post(`/posts/${post.id}/like`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
+      if (selectedPost) {
+        setSelectedPost({
+          ...selectedPost,
+          likedByUser: !selectedPost.likedByUser,
+          likeCount: selectedPost.likedByUser
+            ? selectedPost.likeCount - 1
+            : selectedPost.likeCount + 1,
+        });
+      }
+    },
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: (content: string) =>
+      api.post(`/posts/${selectedPost?.id}/comments`, { content }),
+    onSuccess: () => {
+      setCommentText("");
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
+    },
+  });
+
+  const createPrivateChatMutation = useMutation({
+    mutationFn: (friendId: string) => api.post(`/chats/private/${friendId}`),
+    onSuccess: (res) => {
+      setShowFriendsModal(false);
+      navigation.navigate("ChatDetail", {
+        chatId: res.data.id,
+        name: "Conversa",
+      });
+    },
+  });
 
   const uploadImageAsync = async (uri: string) => {
-    // Se já é URL http ou Base64 (data:), não faz upload novamente
-    if (uri.startsWith("http") || uri.startsWith("data:")) {
-      return uri;
-    }
-
+    if (uri.startsWith("http") || uri.startsWith("data:")) return uri;
     try {
       setIsUploading(true);
       const formData = new FormData();
       const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
       const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : "image/jpeg";
-
       // @ts-ignore
-      formData.append("file", { uri, name: filename, type });
-
-      const res = await api.post("/uploads/avatar", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+      formData.append("file", {
+        uri,
+        name: filename,
+        type: match ? `image/${match[1]}` : "image/jpeg",
       });
-      return res.data.url; // Retorna a string Base64
-    } catch (err: any) {
-      console.error("Upload error response:", err?.response?.data);
-      Alert.alert(
-        "Erro",
-        err?.response?.data?.message || "Falha ao converter e enviar imagem",
-      );
+      const res = await api.post("/uploads/avatar", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.url;
+    } catch {
       return null;
     } finally {
       setIsUploading(false);
     }
   };
 
-  const { data: postsData, isLoading: postsLoading } = useQuery({
-    queryKey: ["posts", "user", user?.id],
-    queryFn: async () => {
-      const response = await api.get(`/posts/user/${user?.id}`, {
-        params: { skip: 0, take: 20 },
-      });
-      return response.data;
-    },
-    enabled: !!user?.id,
-  });
-
-  const createPostMutation = useMutation({
-    mutationFn: (data: any) => api.post("/posts", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
-      setPostContent("");
-      setPostImage(null);
-      setShowCreatePostModal(false);
-      Alert.alert("Sucesso", "Post criado com sucesso!");
-    },
-    onError: () => {
-      Alert.alert("Erro", "Erro ao criar post");
-    },
-  });
-
-  const likePostMutation = useMutation({
-    mutationFn: (postId: string) => api.post(`/posts/${postId}/like`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
-    },
-  });
-
-  const deletePostMutation = useMutation({
-    mutationFn: (postId: string) => api.delete(`/posts/${postId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
-      Alert.alert("Sucesso", "Post deletado!");
-    },
-  });
-
   const handleSaveProfile = async () => {
-    if (!nickname || !city) {
-      return Alert.alert("Atenção", "Nickname e Cidade são obrigatórios.");
-    }
-
-    setLoading(true);
+    if (!name || !nickname || !city)
+      return Alert.alert(
+        "Atenção",
+        "Nome, Nickname e Cidade são obrigatórios.",
+      );
     try {
-      const profileData = {
+      await api.patch("/users/profile", {
+        name,
         nickname,
         city,
+        bio,
         avatarUrl: image,
-      };
-      await api.patch("/users/profile", profileData);
+      });
       await refreshUser();
       setEditMode(false);
-      Alert.alert("Sucesso", "Perfil atualizado!");
-    } catch (error: any) {
-      const msg = error.response?.data?.message || "Erro ao salvar perfil";
-      Alert.alert("Erro", msg);
-    } finally {
-      setLoading(false);
+    } catch {
+      Alert.alert("Erro", "Erro ao salvar o perfil.");
     }
-  };
-
-  const handleCreatePost = async () => {
-    if (!postContent.trim()) {
-      Alert.alert("Erro", "O post não pode estar vazio");
-      return;
-    }
-
-    setIsCreatingPost(true);
-    createPostMutation.mutate(
-      {
-        content: postContent,
-        imageUrl: postImage,
-      },
-      {
-        onSettled: () => setIsCreatingPost(false),
-      },
-    );
-  };
-
-  const handleDeletePost = (postId: string) => {
-    Alert.alert("Confirmar", "Tem certeza que deseja deletar este post?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Deletar",
-        onPress: () => deletePostMutation.mutate(postId),
-        style: "destructive",
-      },
-    ]);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Modal
-        visible={showCreatePostModal}
-        animationType="slide"
-        onRequestClose={() => setShowCreatePostModal(false)}
-      >
-        <SafeAreaView style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCreatePostModal(false)}>
-              <X color={MIPO_COLORS.text} size={24} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Criar Post</Text>
-            <View style={{ width: 24 }} />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* HEADER */}
+        <View style={[styles.header, { backgroundColor: theme.bg }]}>
+          <View style={styles.headerTop}>
+            <Text style={[styles.headerNickname, { color: theme.text }]}>
+              @{user?.nickname || "usuario"}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert(
+                    "Sua Carteira 💰",
+                    `Você possui ${user?.coins || 0} moedas disponíveis.`,
+                  )
+                }
+              >
+                <Wallet size={24} color={theme.text} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={signOut}>
+                <LogOut size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.postInputContainer}>
-              <Image
-                source={{
-                  uri:
-                    image ||
-                    `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
-                }}
-                style={styles.modalAvatar}
-              />
-              <TextInput
-                style={styles.postTextInput}
-                placeholder="O que você está pensando?"
-                value={postContent}
-                onChangeText={setPostContent}
-                multiline
-                numberOfLines={4}
-                placeholderTextColor={MIPO_COLORS.textLighter}
-              />
+          <View style={styles.profileMain}>
+            <View>
+              <LinearGradient
+                colors={["#c73636", "#e6683c", "#f09433"]}
+                style={styles.gradientBorder}
+              >
+                <Image
+                  source={{
+                    uri:
+                      image ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+                  }}
+                  style={[styles.avatar, { borderColor: theme.bg }]}
+                />
+              </LinearGradient>
+              {editMode && (
+                <TouchableOpacity
+                  style={styles.editPhotoBtn}
+                  onPress={async () => {
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ["images"],
+                      allowsEditing: true,
+                      aspect: [1, 1],
+                      quality: 0.5,
+                    });
+                    if (!result.canceled) {
+                      const uploaded = await uploadImageAsync(
+                        result.assets[0].uri,
+                      );
+                      if (uploaded) setImage(uploaded);
+                    }
+                  }}
+                >
+                  <Camera size={14} color="#fff" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {postImage && (
-              <View style={styles.postImagePreview}>
-                <Image
-                  source={{ uri: postImage }}
-                  style={styles.previewImage}
+            <View style={styles.statsContainer}>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, { color: theme.text }]}>
+                  {postsData?.data?.length || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                  Posts
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.statBox}
+                onPress={() => setShowFriendsModal(true)}
+              >
+                <Text style={[styles.statNumber, { color: theme.text }]}>
+                  {friendsData?.data?.length || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                  Amigos
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, { color: theme.text }]}>
+                  {user?.achievements?.length || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                  Troféus
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* BIO OU FORMULÁRIO */}
+          {editMode ? (
+            <View style={styles.editForm}>
+              <View
+                style={[styles.inputGroup, { backgroundColor: theme.surface }]}
+              >
+                <UserIcon size={18} color={theme.textMuted} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="Nome Completo"
+                  value={name}
+                  onChangeText={setName}
+                  placeholderTextColor={theme.textMuted}
                 />
+              </View>
+              <View
+                style={[styles.inputGroup, { backgroundColor: theme.surface }]}
+              >
+                <AtSign size={18} color={theme.textMuted} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="Nickname"
+                  value={nickname}
+                  onChangeText={setNickname}
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
+              <View
+                style={[styles.inputGroup, { backgroundColor: theme.surface }]}
+              >
+                <MapPin size={18} color={theme.textMuted} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="Cidade"
+                  value={city}
+                  onChangeText={setCity}
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
+              <View
+                style={[
+                  styles.inputGroup,
+                  {
+                    backgroundColor: theme.surface,
+                    height: 80,
+                    alignItems: "flex-start",
+                    paddingTop: 10,
+                  },
+                ]}
+              >
+                <FileText
+                  size={18}
+                  color={theme.textMuted}
+                  style={{ marginTop: 2 }}
+                />
+                <TextInput
+                  style={[
+                    styles.input,
+                    { color: theme.text, textAlignVertical: "top" },
+                  ]}
+                  placeholder="Biografia"
+                  value={bio}
+                  onChangeText={setBio}
+                  multiline
+                  placeholderTextColor={theme.textMuted}
+                />
+              </View>
+
+              <View style={styles.actionButtonsRow}>
                 <TouchableOpacity
-                  style={styles.removeImageBtn}
-                  onPress={() => setPostImage(null)}
+                  style={[
+                    styles.editBtn,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                  onPress={() => setEditMode(false)}
                 >
-                  <X color={MIPO_COLORS.white} size={16} />
+                  <Text style={[styles.editBtnText, { color: theme.text }]}>
+                    Cancelar
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.editBtn,
+                    {
+                      backgroundColor: theme.primary,
+                      borderColor: theme.primary,
+                    },
+                  ]}
+                  onPress={handleSaveProfile}
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={[styles.editBtnText, { color: "#fff" }]}>
+                      Salvar
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            )}
+            </View>
+          ) : (
+            <>
+              <View style={styles.bioContainer}>
+                <Text style={[styles.bioName, { color: theme.text }]}>
+                  {user?.name}
+                </Text>
+                <Text style={[styles.bioCity, { color: theme.textMuted }]}>
+                  {user?.city || "Adicione sua cidade"}
+                </Text>
+                {user?.bio && (
+                  <Text style={{ color: theme.text, marginTop: 8 }}>
+                    {user.bio}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.actionButtonsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.editBtn,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                  onPress={() => setEditMode(true)}
+                >
+                  <Text style={[styles.editBtnText, { color: theme.text }]}>
+                    Editar Perfil
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
-            <TouchableOpacity
-              style={styles.selectImageBtn}
-              onPress={async () => {
-                const result = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: ["images"], // Atualizado
-                  allowsEditing: true,
-                  aspect: [1, 1],
-                  quality: 0.5,
-                });
-                if (!result.canceled) {
-                  const uri = result.assets[0].uri;
-                  const uploaded = await uploadImageAsync(uri);
-                  setPostImage(uploaded || uri);
-                }
-              }}
+          {/* CONQUISTAS */}
+          <View style={styles.achievementsSection}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              🏆 Minhas Conquistas
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginTop: 10 }}
             >
-              <Camera color={MIPO_COLORS.primary} size={18} />
-              <Text style={styles.selectImageBtnText}>Adicionar Imagem</Text>
-            </TouchableOpacity>
-          </ScrollView>
+              {user?.achievements?.length && user.achievements.length > 0 ? (
+                user.achievements.map((ach: any) => (
+                  <View
+                    key={ach.id}
+                    style={[
+                      styles.achievementBadge,
+                      { backgroundColor: theme.surface },
+                    ]}
+                  >
+                    <Text style={styles.achievementIcon}>
+                      {ach.icon || "🏅"}
+                    </Text>
+                    <Text
+                      style={[styles.achievementTitle, { color: theme.text }]}
+                      numberOfLines={1}
+                    >
+                      {ach.title}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={{ color: theme.textMuted }}>
+                  Nenhuma conquista ainda. Jogue para ganhar!
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
 
+        {/* GRID DE POSTS */}
+        <View style={styles.postsGrid}>
+          {postsData?.data?.map((item: any) => (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.gridItem, { borderColor: theme.border }]}
+              onPress={() => setSelectedPost(item)}
+            >
+              {item.imageUrl ? (
+                <Image
+                  source={{ uri: item.imageUrl }}
+                  style={styles.gridImage}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.gridTextOnly,
+                    { backgroundColor: theme.surface },
+                  ]}
+                >
+                  <Text
+                    style={{ color: theme.text, fontSize: 10 }}
+                    numberOfLines={4}
+                  >
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      {/* MODAL LISTA DE AMIGOS */}
+      <Modal visible={showFriendsModal} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+          <View
+            style={[styles.modalHeader, { borderBottomColor: theme.border }]}
+          >
+            <TouchableOpacity onPress={() => setShowFriendsModal(false)}>
+              <X color={theme.text} size={24} />
+            </TouchableOpacity>
+            <Text
+              style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
+            >
+              Amigos
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <FlatList
+            data={friendsData?.data}
+            keyExtractor={(i) => i.id}
+            renderItem={({ item }: any) => (
+              <TouchableOpacity
+                style={[styles.friendCard, { borderBottomColor: theme.border }]}
+                onPress={() => {
+                  setShowFriendsModal(false);
+                  navigation.navigate("PlayerProfile", { userId: item.id });
+                }}
+              >
+                <Image
+                  source={{
+                    uri:
+                      item.avatarUrl ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`,
+                  }}
+                  style={styles.friendAvatar}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.friendName, { color: theme.text }]}>
+                    {item.nickname || item.name}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => createPrivateChatMutation.mutate(item.id)}
+                >
+                  <MessageSquare color={theme.primary} size={20} />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
+      <Modal visible={!!selectedPost} animationType="slide">
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+          <View
+            style={[styles.modalHeader, { borderBottomColor: theme.border }]}
+          >
+            <TouchableOpacity onPress={() => setSelectedPost(null)}>
+              <X color={theme.text} size={24} />
+            </TouchableOpacity>
+            <Text
+              style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
+            >
+              Post
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <FlatList
+            data={commentsData?.data || []}
+            keyExtractor={(i) => i.id}
+            ListHeaderComponent={() => (
+              <View
+                style={{
+                  paddingBottom: 16,
+                  borderBottomWidth: 1,
+                  borderBottomColor: theme.border,
+                }}
+              >
+                <View style={styles.postFullHeader}>
+                  <Image
+                    source={{
+                      uri:
+                        user?.avatarUrl ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+                    }}
+                    style={styles.postAvatar}
+                  />
+                  <Text style={[styles.postName, { color: theme.text }]}>
+                    {user?.nickname || user?.name}
+                  </Text>
+                </View>
+                {selectedPost?.imageUrl && (
+                  <Image
+                    source={{ uri: selectedPost.imageUrl }}
+                    style={styles.postFullImage}
+                    resizeMode="contain"
+                  />
+                )}
+                <View style={styles.postActions}>
+                  <TouchableOpacity
+                    onPress={() => toggleLikeMutation.mutate(selectedPost)}
+                  >
+                    <Heart
+                      size={26}
+                      color={
+                        selectedPost?.likedByUser ? theme.primary : theme.text
+                      }
+                      fill={
+                        selectedPost?.likedByUser
+                          ? theme.primary
+                          : "transparent"
+                      }
+                    />
+                  </TouchableOpacity>
+                  <MessageCircle
+                    size={26}
+                    color={theme.text}
+                    style={{ marginLeft: 16 }}
+                  />
+                </View>
+                <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+                  <Text style={{ color: theme.text, fontWeight: "bold" }}>
+                    {selectedPost?.likeCount} curtidas
+                  </Text>
+                  <Text style={{ color: theme.text, marginTop: 4 }}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {user?.nickname}{" "}
+                    </Text>
+                    {selectedPost?.content}
+                  </Text>
+                </View>
+              </View>
+            )}
+            renderItem={({ item }: any) => (
+              <View style={styles.commentItem}>
+                <Image
+                  source={{
+                    uri:
+                      item.user.avatarUrl ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                  }}
+                  style={styles.commentAvatar}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: theme.text }}>
+                    <Text style={{ fontWeight: "bold" }}>
+                      {item.user.nickname || item.user.name}{" "}
+                    </Text>
+                    {item.content}
+                  </Text>
+                </View>
+              </View>
+            )}
+          />
           <View
             style={[
-              styles.modalFooter,
-              { paddingBottom: (insets.bottom || 0) + 12 },
+              styles.commentInputContainer,
+              {
+                backgroundColor: theme.surface,
+                borderTopColor: theme.border,
+                paddingBottom: insets.bottom + 8,
+              },
             ]}
           >
+            <Image
+              source={{
+                uri:
+                  user?.avatarUrl ||
+                  `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+              }}
+              style={styles.commentInputAvatar}
+            />
+            <TextInput
+              style={[styles.commentInput, { color: theme.text }]}
+              placeholder="Adicione um comentário..."
+              placeholderTextColor={theme.textMuted}
+              value={commentText}
+              onChangeText={setCommentText}
+            />
             <TouchableOpacity
-              style={styles.publishBtn}
-              onPress={handleCreatePost}
-              disabled={isCreatingPost}
+              onPress={() =>
+                commentText.trim() && commentMutation.mutate(commentText)
+              }
             >
-              {isCreatingPost ? (
-                <ActivityIndicator color={MIPO_COLORS.white} size="small" />
-              ) : (
-                <Text style={styles.publishBtnText}>Publicar</Text>
-              )}
+              <Text style={{ color: theme.primary, fontWeight: "bold" }}>
+                Publicar
+              </Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
       </Modal>
-
-      <ScrollView>
-        <View style={styles.header}>
-          <View style={styles.avatarContainer}>
-            <Image
-              key={image}
-              source={{
-                uri:
-                  image ||
-                  `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
-              }}
-              style={styles.avatar}
-              resizeMode="cover"
-            />
-            {editMode && (
-              <TouchableOpacity
-                style={styles.cameraBtn}
-                onPress={async () => {
-                  const result = await ImagePicker.launchImageLibraryAsync({
-                    allowsEditing: true,
-                    aspect: [1, 1],
-                    quality: 0.5,
-                  });
-                  if (!result.canceled) {
-                    const uri = result.assets[0].uri;
-                    const uploaded = await uploadImageAsync(uri);
-                    if (uploaded) {
-                      setImage(uploaded);
-                    }
-                  }
-                }}
-              >
-                <Camera color={MIPO_COLORS.white} size={20} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {editMode ? (
-            <View style={styles.editForm}>
-              <View style={styles.inputGroup}>
-                <AtSign size={18} color={MIPO_COLORS.textLighter} />
-                <TextInput
-                  placeholder="Nickname exclusivo"
-                  style={styles.input}
-                  value={nickname}
-                  onChangeText={setNickname}
-                  autoCapitalize="none"
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <MapPin size={18} color={MIPO_COLORS.textLighter} />
-                <TextInput
-                  placeholder="Cidade"
-                  style={styles.input}
-                  value={city}
-                  onChangeText={setCity}
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
-                onPress={handleSaveProfile}
-                disabled={loading || isUploading}
-              >
-                {loading ? (
-                  <ActivityIndicator color={MIPO_COLORS.white} />
-                ) : (
-                  <Text style={styles.saveBtnText}>Finalizar Configuração</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.infoContainer}>
-              <Text style={styles.userName}>{user?.name}</Text>
-              <Text style={styles.userHandle}>@{user?.nickname}</Text>
-              <Text style={styles.userCity}>{user?.city}</Text>
-              <View style={styles.profileActions}>
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => setEditMode(true)}
-                >
-                  <Text style={styles.editBtnText}>Editar Perfil</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.createPostBtn}
-                  onPress={() => setShowCreatePostModal(true)}
-                >
-                  <Plus color={MIPO_COLORS.white} size={18} />
-                  <Text style={styles.createPostBtnText}>Post</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.postsSection}>
-          <Text style={styles.sectionTitle}>
-            Meus Posts ({postsData?.data?.length || 0})
-          </Text>
-
-          {postsLoading ? (
-            <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
-          ) : postsData?.data && postsData.data.length > 0 ? (
-            <FlatList
-              data={postsData.data}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <PostCard
-                  post={item}
-                  onLike={() => likePostMutation.mutate(item.id)}
-                  onDelete={handleDeletePost}
-                />
-              )}
-              scrollEnabled={false}
-            />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Você ainda não tem posts</Text>
-              <TouchableOpacity
-                style={styles.createFirstPostBtn}
-                onPress={() => setShowCreatePostModal(true)}
-              >
-                <Plus color={MIPO_COLORS.white} size={16} />
-                <Text style={styles.createFirstPostBtnText}>
-                  Criar Primeiro Post
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {!editMode && (
-          <View style={styles.menuContainer}>
-            <TouchableOpacity style={styles.menuItem} onPress={signOut}>
-              <View style={styles.menuLeft}>
-                <LogOut size={20} color={MIPO_COLORS.primary} />
-                <Text style={[styles.menuText, { color: MIPO_COLORS.primary }]}>
-                  Sair da Conta
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: MIPO_COLORS.background },
-  modal: {
-    flex: 1,
-    backgroundColor: MIPO_COLORS.background,
-  },
-  modalHeader: {
+  container: { flex: 1 },
+  header: { padding: 16 },
+  headerTop: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: MIPO_COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-  },
-  modalContent: {
-    flex: 1,
-    paddingVertical: 16,
-  },
-  postInputContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  modalAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  postTextInput: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: MIPO_COLORS.white,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
-    fontSize: 14,
-    color: MIPO_COLORS.text,
-    textAlignVertical: "top",
-  },
-  postImagePreview: {
-    position: "relative",
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  previewImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-  },
-  removeImageBtn: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    borderRadius: 16,
-    padding: 8,
-  },
-  selectImageBtn: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: MIPO_COLORS.white,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
-    gap: 8,
+    marginBottom: 20,
   },
-  selectImageBtnText: {
-    fontSize: 14,
-    color: MIPO_COLORS.primary,
-    fontWeight: "600",
-  },
-  modalFooter: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === "android" ? 28 : 12,
-    backgroundColor: MIPO_COLORS.white,
-    borderTopWidth: 1,
-    borderTopColor: MIPO_COLORS.border,
-  },
-  publishBtn: {
-    paddingVertical: 12,
-    backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 8,
+  headerNickname: { fontSize: 22, fontWeight: "bold" },
+  profileMain: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  gradientBorder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     justifyContent: "center",
     alignItems: "center",
   },
-  publishBtnText: {
-    color: MIPO_COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  header: {
-    alignItems: "center",
-    padding: 20,
-    backgroundColor: MIPO_COLORS.white,
-  },
-  avatarContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: MIPO_COLORS.border,
-    overflow: "visible",
-    borderWidth: 3,
-    borderColor: MIPO_COLORS.primary,
-  },
-  avatar: { width: "100%", height: "100%", borderRadius: 50 },
-  cameraBtn: {
+  avatar: { width: 84, height: 84, borderRadius: 42, borderWidth: 3 },
+  editPhotoBtn: {
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: MIPO_COLORS.primary,
-    padding: 8,
-    borderRadius: 20,
-    zIndex: 3,
-    elevation: 6,
+    backgroundColor: "#c73636",
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
   },
-  editForm: { width: "100%", marginTop: 16 },
+  statsContainer: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginLeft: 20,
+  },
+  statBox: { alignItems: "center" },
+  statNumber: { fontSize: 18, fontWeight: "bold" },
+  statLabel: { fontSize: 13 },
+  bioContainer: { marginBottom: 16 },
+  bioName: { fontSize: 15, fontWeight: "600" },
+  bioCity: { fontSize: 14, marginTop: 2 },
+  actionButtonsRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  editBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  editBtnText: { fontSize: 14, fontWeight: "600" },
+  achievementsSection: { marginTop: 10, marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: "bold" },
+  achievementBadge: {
+    padding: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    marginRight: 10,
+    width: 80,
+    elevation: 2,
+  },
+  achievementIcon: { fontSize: 24, marginBottom: 4 },
+  achievementTitle: { fontSize: 10, fontWeight: "600", textAlign: "center" },
+  postsGrid: { flexDirection: "row", flexWrap: "wrap" },
+  gridItem: { width: "33.33%", aspectRatio: 1, borderWidth: 0.5 },
+  gridImage: { width: "100%", height: "100%" },
+  gridTextOnly: {
+    width: "100%",
+    height: "100%",
+    padding: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  editForm: { marginBottom: 16 },
   inputGroup: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: MIPO_COLORS.background,
     borderRadius: 8,
     paddingHorizontal: 12,
     marginBottom: 10,
-  },
-  input: { flex: 1, height: 44, marginLeft: 8 },
-  saveBtn: {
-    backgroundColor: "#10b981",
     height: 44,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
   },
-  saveBtnDisabled: {
-    opacity: 0.6,
-  },
-  saveBtnText: { color: MIPO_COLORS.white, fontWeight: "bold", fontSize: 14 },
-  infoContainer: { alignItems: "center", marginTop: 12 },
-  userName: { fontSize: 20, fontWeight: "bold", color: MIPO_COLORS.text },
-  userHandle: { fontSize: 14, color: MIPO_COLORS.primary, fontWeight: "600" },
-  userCity: { fontSize: 13, color: MIPO_COLORS.textLighter, marginBottom: 12 },
-  profileActions: {
+  input: { flex: 1, marginLeft: 8 },
+
+  modalHeader: {
     flexDirection: "row",
-    gap: 8,
-  },
-  editBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 6 },
-  editBtnText: { color: MIPO_COLORS.primary, fontWeight: "600", fontSize: 13 },
-  createPostBtn: {
-    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 6,
-    gap: 4,
-  },
-  createPostBtnText: {
-    color: MIPO_COLORS.white,
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  postsSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-    marginBottom: 12,
-  },
-  postCard: {
-    backgroundColor: MIPO_COLORS.white,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
-  },
-  postContent: {
-    fontSize: 14,
-    color: MIPO_COLORS.text,
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  postImage: {
-    width: "100%",
-    height: 160,
-    borderRadius: 6,
-    marginBottom: 8,
-  },
-  postActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  actionText: {
-    fontSize: 12,
-    color: MIPO_COLORS.textLighter,
-  },
-  emptyContainer: {
-    paddingVertical: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 14,
-    color: MIPO_COLORS.textLighter,
-    marginBottom: 16,
-  },
-  createFirstPostBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 8,
-    gap: 6,
-  },
-  createFirstPostBtnText: {
-    color: MIPO_COLORS.white,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  menuContainer: {
-    backgroundColor: MIPO_COLORS.white,
-    marginHorizontal: 16,
-    borderRadius: 12,
-    marginVertical: 16,
-  },
-  menuItem: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
   },
-  menuLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  menuText: { fontSize: 16, fontWeight: "500" },
+  friendCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+  },
+  friendAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
+  friendName: { fontSize: 16, fontWeight: "bold" },
+  iconBtn: {
+    padding: 8,
+    backgroundColor: "rgba(199, 54, 54, 0.1)",
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+
+  postFullHeader: { flexDirection: "row", alignItems: "center", padding: 12 },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  postName: { fontWeight: "bold", fontSize: 14 },
+  postFullImage: { width: "100%", height: 350, backgroundColor: "#000" },
+  postActions: { flexDirection: "row", paddingHorizontal: 16, marginTop: 12 },
+  commentItem: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  commentAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
+  commentInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderTopWidth: 1,
+  },
+  commentInputAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 10,
+  },
+  commentInput: { flex: 1, height: 40 },
 });

@@ -9,6 +9,7 @@ import {
   Alert,
   Image,
   ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
 import {
   Bell,
@@ -24,7 +25,6 @@ import { api } from "../services/api";
 import { useFocusEffect } from "@react-navigation/native";
 import { usePushNotifications } from "../services/usePushNotifications";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 const MIPO_COLORS = {
   primary: "#E11D48",

@@ -8,12 +8,12 @@ import {
   Image,
   TextInput,
   ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
 import { Search, Gamepad2, Users, ChevronLeft } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useNavigation } from "@react-navigation/native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function GamesListScreen() {
   const navigation = useNavigation<any>();

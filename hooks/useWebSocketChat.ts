@@ -44,15 +44,16 @@ export const useWebSocketChat = (): UseWebSocketChatReturn => {
     if (!user?.id || !token) return;
 
     const newSocket = io(`${WS_URL}/chats`, {
+      // Isso conectará ao namespace /chats
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      transports: ["websocket"], // Adicione isso para maior estabilidade
       auth: {
         token,
       },
     });
-
     // Eventos de conexão
     newSocket.on("connect", () => {
       console.log("[WS] Conectado ao servidor");
