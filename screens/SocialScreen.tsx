@@ -1,9 +1,8 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   FlatList,
   Image,
@@ -21,6 +20,9 @@ import {
   Search,
   Plus,
   MessageSquare,
+  Newspaper,
+  Users,
+  MessagesSquare,
   User,
   Gift,
   X,
@@ -58,6 +60,14 @@ interface Chat {
   unreadCount: number;
 }
 
+interface SocialUser {
+  id: string;
+  name: string;
+  nickname: string;
+  city: string;
+  avatarUrl: string;
+}
+
 const MIPO_COLORS = {
   primary: "#c73636",
   background: "#faf6f1",
@@ -67,19 +77,39 @@ const MIPO_COLORS = {
   white: "#ffffff",
 };
 
-// ===== COMPONENTE DO POST =====
-const PostCard = ({ post, onLike, onComment, onUserProfile }: any) => {
-  const formatDate = (date: string) => {
-    const d = new Date(date);
-    return d.toLocaleDateString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+const formatDate = (date: string) => {
+  const d = new Date(date);
+  return d.toLocaleDateString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
+const TabButton = ({
+  active,
+  label,
+  onPress,
+  icon,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+  icon: React.ReactNode;
+}) => (
+  <TouchableOpacity
+    style={[styles.tabButton, active && styles.tabButtonActive]}
+    onPress={onPress}
+  >
+    {icon}
+    <Text style={[styles.tabButtonText, active && styles.tabButtonTextActive]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
+const PostCard = ({ post, onLike, onComment, onUserProfile }: any) => {
   return (
     <View style={styles.postCard}>
-      {/* Header do Post */}
       <TouchableOpacity
         style={styles.postHeader}
         onPress={() => onUserProfile(post.user.id)}
@@ -100,24 +130,16 @@ const PostCard = ({ post, onLike, onComment, onUserProfile }: any) => {
         </View>
       </TouchableOpacity>
 
-      {/* Conteúdo */}
       <Text style={styles.postContent}>{post.content}</Text>
 
-      {/* Imagem */}
       {post.imageUrl && (
         <Image source={{ uri: post.imageUrl }} style={styles.postImage} />
       )}
 
-      {/* Ações */}
       <View style={styles.postActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onLike(post.id)}
-        >
+        <TouchableOpacity style={styles.actionButton} onPress={() => onLike(post.id)}>
           <Heart
-            color={
-              post.likedByUser ? MIPO_COLORS.primary : MIPO_COLORS.textLighter
-            }
+            color={post.likedByUser ? MIPO_COLORS.primary : MIPO_COLORS.textLighter}
             size={18}
             fill={post.likedByUser ? MIPO_COLORS.primary : "transparent"}
           />
@@ -140,7 +162,6 @@ const PostCard = ({ post, onLike, onComment, onUserProfile }: any) => {
   );
 };
 
-// ===== COMPONENTE DO CHAT =====
 const ChatItem = ({ chat, onPress }: any) => {
   return (
     <TouchableOpacity style={styles.chatItem} onPress={onPress}>
@@ -172,7 +193,6 @@ const ChatItem = ({ chat, onPress }: any) => {
   );
 };
 
-// ===== COMPONENTE DO USUÁRIO PARA ADICIONAR =====
 const UserCard = ({ user, onAdd, isFriendRequested }: any) => {
   return (
     <View style={styles.userCard}>
@@ -186,7 +206,7 @@ const UserCard = ({ user, onAdd, isFriendRequested }: any) => {
       />
       <View style={styles.userCardInfo}>
         <Text style={styles.userCardName}>{user.nickname || user.name}</Text>
-        <Text style={styles.userCardCity}>{user.city}</Text>
+        <Text style={styles.userCardCity}>{user.city || "Sem cidade"}</Text>
       </View>
       <TouchableOpacity
         style={[styles.addButton, isFriendRequested && styles.addButtonPending]}
@@ -199,7 +219,6 @@ const UserCard = ({ user, onAdd, isFriendRequested }: any) => {
   );
 };
 
-// ===== COMPONENTE DO AMIGO =====
 const FriendCard = ({ friend, onMessage, onProfile, onInviteToEvent }: any) => {
   return (
     <View style={styles.friendCard}>
@@ -212,22 +231,14 @@ const FriendCard = ({ friend, onMessage, onProfile, onInviteToEvent }: any) => {
         style={styles.friendCardAvatar}
       />
       <View style={styles.friendCardInfo}>
-        <Text style={styles.friendCardName}>
-          {friend.nickname || friend.name}
-        </Text>
-        <Text style={styles.friendCardCity}>{friend.city}</Text>
+        <Text style={styles.friendCardName}>{friend.nickname || friend.name}</Text>
+        <Text style={styles.friendCardCity}>{friend.city || "Sem cidade"}</Text>
       </View>
       <View style={styles.friendCardActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onMessage(friend.id)}
-        >
+        <TouchableOpacity style={styles.actionButton} onPress={() => onMessage(friend.id)}>
           <MessageSquare color={MIPO_COLORS.primary} size={18} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onProfile(friend.id)}
-        >
+        <TouchableOpacity style={styles.actionButton} onPress={() => onProfile(friend.id)}>
           <User color={MIPO_COLORS.primary} size={18} />
         </TouchableOpacity>
         <TouchableOpacity
@@ -241,7 +252,6 @@ const FriendCard = ({ friend, onMessage, onProfile, onInviteToEvent }: any) => {
   );
 };
 
-// ===== SCREEN PRINCIPAL =====
 export default function SocialScreen({ navigation }: any) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -249,8 +259,8 @@ export default function SocialScreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [addFriendsModalVisible, setAddFriendsModalVisible] = useState(false);
+  const [pendingFriendRequests, setPendingFriendRequests] = useState<string[]>([]);
 
-  // ===== QUERIES =====
   const {
     data: feedData,
     isLoading: feedLoading,
@@ -307,7 +317,6 @@ export default function SocialScreen({ navigation }: any) {
     },
   });
 
-  // ===== MUTATIONS =====
   const likePostMutation = useMutation({
     mutationFn: (postId: string) => api.post(`/posts/${postId}/like`),
     onSuccess: () => {
@@ -315,17 +324,16 @@ export default function SocialScreen({ navigation }: any) {
     },
     onError: (error: any) => {
       if (error.response?.status === 400) {
-        // Já deu like, remover
         return;
       }
     },
   });
 
   const sendFriendRequestMutation = useMutation({
-    mutationFn: (friendId: string) =>
-      api.post("/friends/request", { friendId }),
-    onSuccess: () => {
+    mutationFn: (friendId: string) => api.post("/friends/request", { friendId }),
+    onSuccess: (_, friendId) => {
       queryClient.invalidateQueries({ queryKey: ["friends", "available"] });
+      setPendingFriendRequests((prev) => [...prev, friendId]);
       Alert.alert("Sucesso", "Solicitação de amizade enviada!");
     },
     onError: (error: any) => {
@@ -337,31 +345,76 @@ export default function SocialScreen({ navigation }: any) {
   });
 
   const createPrivateChatMutation = useMutation({
-    mutationFn: (targetUserId: string) =>
-      api.post(`/chats/private/${targetUserId}`),
+    mutationFn: (targetUserId: string) => api.post(`/chats/private/${targetUserId}`),
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["chats"] });
       navigation.navigate("ChatDetail", { chatId: response.data.id });
     },
     onError: (error: any) => {
-      Alert.alert(
-        "Erro",
-        error.response?.data?.message || "Erro ao criar chat",
-      );
+      Alert.alert("Erro", error.response?.data?.message || "Erro ao criar chat");
     },
   });
 
-  // ===== CALLBACKS =====
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      refetchFeed(),
-      refetchChats(),
-      refetchFriends(),
-      refetchUsers(),
-    ]);
+    await Promise.all([refetchFeed(), refetchChats(), refetchFriends(), refetchUsers()]);
     setRefreshing(false);
   };
+
+  const feedPosts = useMemo(
+    () => ((feedData?.data || []) as Post[]),
+    [feedData?.data],
+  );
+  const friends = useMemo(
+    () => ((friendsData?.data || []) as SocialUser[]),
+    [friendsData?.data],
+  );
+  const chats = useMemo(() => ((chatsData?.data || []) as Chat[]), [chatsData?.data]);
+  const suggestedUsers = useMemo(
+    () => ((usersData?.data || []) as SocialUser[]),
+    [usersData?.data],
+  );
+
+  const filteredFeed = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return feedPosts;
+    return feedPosts.filter((post) => {
+      const userName = `${post.user.nickname || ""} ${post.user.name || ""}`.toLowerCase();
+      return post.content.toLowerCase().includes(q) || userName.includes(q);
+    });
+  }, [feedPosts, searchQuery]);
+
+  const filteredFriends = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((friend) => {
+      const fullName = `${friend.nickname || ""} ${friend.name || ""} ${friend.city || ""}`.toLowerCase();
+      return fullName.includes(q);
+    });
+  }, [friends, searchQuery]);
+
+  const filteredChats = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return chats;
+    return chats.filter((chat) => {
+      const haystack = `${chat.name || ""} ${chat.lastMessage?.content || ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [chats, searchQuery]);
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return suggestedUsers;
+    return suggestedUsers.filter((u) => {
+      const haystack = `${u.nickname || ""} ${u.name || ""} ${u.city || ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [searchQuery, suggestedUsers]);
+
+  const totalUnreadMessages = useMemo(
+    () => chats.reduce((sum, chat) => sum + chat.unreadCount, 0),
+    [chats],
+  );
 
   const handleLikePost = (postId: string) => {
     likePostMutation.mutate(postId);
@@ -376,6 +429,9 @@ export default function SocialScreen({ navigation }: any) {
   };
 
   const handleAddFriend = (userId: string) => {
+    if (pendingFriendRequests.includes(userId)) {
+      return;
+    }
     sendFriendRequestMutation.mutate(userId);
   };
 
@@ -388,78 +444,80 @@ export default function SocialScreen({ navigation }: any) {
   };
 
   const handleInviteToEvent = (friendId: string) => {
-    Alert.alert("Em desenvolvimento", "Convite para evento (em breve)", [
-      { text: "OK" },
-    ]);
+    Alert.alert("Em desenvolvimento", "Convite para evento (em breve)", [{ text: "OK" }]);
   };
 
   const handleChatPress = (chat: Chat) => {
     navigation.navigate("ChatDetail", { chatId: chat.id, name: chat.name });
   };
 
-  // ===== RENDER =====
   return (
     <SafeAreaView style={styles.container}>
-      {/* HEADER COM ABAS */}
       <View style={styles.header}>
+        <View style={styles.topTitleRow}>
+          <View>
+            <Text style={styles.screenTitle}>Mipo Social</Text>
+            <Text style={styles.screenSubtitle}>Conecte-se com amigos e comunidades</Text>
+          </View>
+          <View style={styles.profileBubble}>
+            <Text style={styles.profileBubbleText}>
+              {(user?.name || "M").slice(0, 1).toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.searchContainer}>
+          <Search color={MIPO_COLORS.textLighter} size={18} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Buscar post, amigo ou chat"
+            placeholderTextColor={MIPO_COLORS.textLighter}
+          />
+          {!!searchQuery && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <X color={MIPO_COLORS.textLighter} size={18} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.quickStatsRow}>
+          <View style={styles.statPill}>
+            <Users color={MIPO_COLORS.primary} size={14} />
+            <Text style={styles.statPillText}>{friends.length} amigos</Text>
+          </View>
+          <View style={styles.statPill}>
+            <MessagesSquare color={MIPO_COLORS.primary} size={14} />
+            <Text style={styles.statPillText}>{totalUnreadMessages} não lidas</Text>
+          </View>
+        </View>
+
         <View style={styles.tabButtons}>
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "feed" && styles.tabButtonActive,
-            ]}
+          <TabButton
+            active={activeTab === "feed"}
+            label="Feed"
             onPress={() => setActiveTab("feed")}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                activeTab === "feed" && styles.tabButtonTextActive,
-              ]}
-            >
-              Feed
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "friends" && styles.tabButtonActive,
-            ]}
+            icon={<Newspaper color={activeTab === "feed" ? MIPO_COLORS.white : MIPO_COLORS.textLighter} size={16} />}
+          />
+          <TabButton
+            active={activeTab === "friends"}
+            label="Amigos"
             onPress={() => setActiveTab("friends")}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                activeTab === "friends" && styles.tabButtonTextActive,
-              ]}
-            >
-              Amigos
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === "chats" && styles.tabButtonActive,
-            ]}
+            icon={<Users color={activeTab === "friends" ? MIPO_COLORS.white : MIPO_COLORS.textLighter} size={16} />}
+          />
+          <TabButton
+            active={activeTab === "chats"}
+            label="Chats"
             onPress={() => setActiveTab("chats")}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                activeTab === "chats" && styles.tabButtonTextActive,
-              ]}
-            >
-              Chats
-            </Text>
-          </TouchableOpacity>
+            icon={<MessagesSquare color={activeTab === "chats" ? MIPO_COLORS.white : MIPO_COLORS.textLighter} size={16} />}
+          />
         </View>
       </View>
 
-      {/* CONTEÚDO DAS ABAS */}
       {activeTab === "feed" && (
         <FlatList
-          data={feedData?.data || []}
+          data={filteredFeed}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <PostCard
@@ -469,25 +527,27 @@ export default function SocialScreen({ navigation }: any) {
               onUserProfile={handleUserProfile}
             />
           )}
+          ListHeaderComponent={
+            <Text style={styles.feedInfoText}>
+              Timeline personalizada para você · {filteredFeed.length} posts
+            </Text>
+          }
           ListEmptyComponent={
             feedLoading ? (
               <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
             ) : (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Nenhum post no feed</Text>
+                <Text style={styles.emptyText}>Nenhum post no feed para essa busca</Text>
               </View>
             )
           }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={styles.feedContent}
         />
       )}
 
       {activeTab === "friends" && (
         <View style={styles.friendsContainer}>
-          {/* HEADER COM BOTÃO DE ADICIONAR */}
           <View style={styles.friendsHeader}>
             <Text style={styles.friendsTitle}>Meus Amigos</Text>
             <TouchableOpacity
@@ -499,9 +559,8 @@ export default function SocialScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* LISTA DE AMIGOS */}
           <FlatList
-            data={friendsData?.data || []}
+            data={filteredFriends}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <FriendCard
@@ -516,62 +575,44 @@ export default function SocialScreen({ navigation }: any) {
                 <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
               ) : (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>
-                    Você não tem amigos ainda
-                  </Text>
+                  <Text style={styles.emptyText}>Nenhum amigo encontrado</Text>
                   <TouchableOpacity
                     style={styles.ctaButton}
                     onPress={() => setAddFriendsModalVisible(true)}
                   >
-                    <Text style={styles.ctaButtonText}>
-                      Adicionar novo amigo
-                    </Text>
+                    <Text style={styles.ctaButtonText}>Adicionar novo amigo</Text>
                   </TouchableOpacity>
                 </View>
               )
             }
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           />
 
-          {/* MODAL PARA ADICIONAR NOVOS AMIGOS */}
-          <Modal
-            visible={addFriendsModalVisible}
-            animationType="slide"
-            transparent={true}
-          >
+          <Modal visible={addFriendsModalVisible} animationType="slide" transparent>
             <SafeAreaView style={styles.modalContainer}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Adicionar novos amigos</Text>
-                <TouchableOpacity
-                  onPress={() => setAddFriendsModalVisible(false)}
-                >
+                <TouchableOpacity onPress={() => setAddFriendsModalVisible(false)}>
                   <X color={MIPO_COLORS.text} size={24} />
                 </TouchableOpacity>
               </View>
 
               <FlatList
-                data={usersData?.data || []}
+                data={filteredUsers}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <UserCard
                     user={item}
                     onAdd={handleAddFriend}
-                    isFriendRequested={false}
+                    isFriendRequested={pendingFriendRequests.includes(item.id)}
                   />
                 )}
                 ListEmptyComponent={
                   usersLoading ? (
-                    <ActivityIndicator
-                      size="large"
-                      color={MIPO_COLORS.primary}
-                    />
+                    <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
                   ) : (
                     <View style={styles.emptyContainer}>
-                      <Text style={styles.emptyText}>
-                        Todos são seus amigos!
-                      </Text>
+                      <Text style={styles.emptyText}>Todos são seus amigos!</Text>
                     </View>
                   )
                 }
@@ -583,20 +624,16 @@ export default function SocialScreen({ navigation }: any) {
 
       {activeTab === "chats" && (
         <View style={styles.chatsContainer}>
-          {/* CRIAR GRUPO BUTTON */}
           <TouchableOpacity
             style={styles.createGroupButton}
             onPress={() => navigation.navigate("CreateChatGroup")}
           >
             <Plus color={MIPO_COLORS.white} size={20} />
-            <Text style={styles.createGroupButtonText}>
-              Criar Grupo de Chat
-            </Text>
+            <Text style={styles.createGroupButtonText}>Criar Grupo de Chat</Text>
           </TouchableOpacity>
 
-          {/* LISTA DE CHATS */}
           <FlatList
-            data={chatsData?.data || []}
+            data={filteredChats}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <ChatItem chat={item} onPress={() => handleChatPress(item)} />
@@ -607,15 +644,12 @@ export default function SocialScreen({ navigation }: any) {
               ) : (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>
-                    Nenhum chat ainda. Crie um grupo ou converse com seus
-                    amigos!
+                    Nenhum chat encontrado. Crie um grupo ou converse com amigos!
                   </Text>
                 </View>
               )
             }
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           />
         </View>
       )}
@@ -630,10 +664,39 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 6,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: MIPO_COLORS.border,
     backgroundColor: MIPO_COLORS.white,
+    gap: 10,
+  },
+  topTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  screenTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: MIPO_COLORS.text,
+  },
+  screenSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: MIPO_COLORS.textLighter,
+  },
+  profileBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: MIPO_COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileBubbleText: {
+    color: MIPO_COLORS.white,
+    fontWeight: "700",
   },
   tabButtons: {
     flexDirection: "row",
@@ -641,33 +704,44 @@ const styles = StyleSheet.create({
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 999,
     backgroundColor: MIPO_COLORS.background,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
   },
   tabButtonActive: {
     backgroundColor: MIPO_COLORS.primary,
   },
   tabButtonText: {
     color: MIPO_COLORS.textLighter,
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
   },
   tabButtonTextActive: {
     color: MIPO_COLORS.white,
   },
   feedContent: {
-    paddingVertical: 12,
+    paddingBottom: 12,
+  },
+  feedInfoText: {
+    fontSize: 12,
+    color: MIPO_COLORS.textLighter,
+    marginHorizontal: 16,
+    marginTop: 12,
   },
   postCard: {
     backgroundColor: MIPO_COLORS.white,
     marginHorizontal: 12,
     marginVertical: 8,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: MIPO_COLORS.border,
   },
   postHeader: {
     flexDirection: "row",
@@ -701,8 +775,8 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: "100%",
-    height: 200,
-    borderRadius: 8,
+    height: 220,
+    borderRadius: 12,
     marginBottom: 12,
   },
   postActions: {
@@ -716,6 +790,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   actionText: {
     fontSize: 12,
@@ -723,10 +799,13 @@ const styles = StyleSheet.create({
   },
   chatItem: {
     backgroundColor: MIPO_COLORS.white,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: MIPO_COLORS.border,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -770,35 +849,51 @@ const styles = StyleSheet.create({
   },
   friendsContainer: {
     flex: 1,
-    paddingVertical: 12,
+    paddingTop: 12,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: MIPO_COLORS.white,
-    borderRadius: 8,
+    paddingVertical: 10,
+    backgroundColor: MIPO_COLORS.background,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: MIPO_COLORS.border,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
     fontSize: 14,
     color: MIPO_COLORS.text,
+  },
+  quickStatsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  statPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#fff2f2",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statPillText: {
+    fontSize: 12,
+    color: MIPO_COLORS.primary,
+    fontWeight: "600",
   },
   createGroupButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     paddingVertical: 12,
     backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     gap: 8,
   },
   createGroupButtonText: {
@@ -814,7 +909,7 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: MIPO_COLORS.border,
   },
@@ -854,20 +949,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 40,
+    paddingHorizontal: 24,
   },
   emptyText: {
     fontSize: 14,
     color: MIPO_COLORS.textLighter,
+    textAlign: "center",
   },
   friendsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: MIPO_COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
+    paddingVertical: 12,
   },
   friendsTitle: {
     fontSize: 18,
@@ -880,7 +974,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: MIPO_COLORS.primary,
-    borderRadius: 6,
+    borderRadius: 20,
     gap: 6,
   },
   addNewFriendButtonText: {
@@ -896,7 +990,7 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: MIPO_COLORS.border,
   },
@@ -944,7 +1038,7 @@ const styles = StyleSheet.create({
   },
   chatsContainer: {
     flex: 1,
-    paddingVertical: 12,
+    paddingTop: 12,
   },
   ctaButton: {
     marginTop: 16,
