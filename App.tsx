@@ -6,7 +6,10 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   Home,
   DoorOpen,
@@ -29,7 +32,9 @@ import SocialScreen from "./screens/SocialScreen";
 import ChatDetailScreen from "./screens/ChatDetailScreen";
 import EventsListScreen from "./screens/EventsListScreen";
 import CreateChatGroupScreen from "./screens/CreateChatGroupScreen";
+import CreateRoomScreen from "./screens/CreateRoomScreen";
 import PlayerProfileScreen from "./screens/PlayerProfileScreen";
+import GameDetailScreen from "./screens/GameDetailScreen";
 
 // Telas de Administração
 import AdminDashboard from "./screens/AdminDashboard";
@@ -42,28 +47,49 @@ import AdminAchievementsScreen from "./screens/AdminAchievementsScreen";
 import AdminCreateEventScreen from "./screens/AdminCreateEventScreen";
 import AdminSendNotificationScreen from "./screens/AdminSendNotificationScreen";
 import AdminEventsManagementScreen from "./screens/AdminEventsManagementScreen"; // <--- NOVA TELA
+import GamesListScreen from "./screens/GameListScreen";
 
 const queryClient = new QueryClient();
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const MIPO_COLORS = {
-  primary: "#E11D48",
-  text: "#1e293b",
-  inactive: "#94a3b8",
+const THEME = {
+  primary: "#c73636",
+  primaryDark: "#9f1d1d",
+  text: "#1c1917",
+  textMuted: "#78716c",
+  background: "#faf6f1",
 };
 
 // Navegação por Abas (Dinâmica para User e Admin)
 function TabNavigator() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: MIPO_COLORS.primary,
-        tabBarInactiveTintColor: MIPO_COLORS.inactive,
-        tabBarStyle: { height: 60, paddingBottom: 8 },
-        headerTitleStyle: { fontWeight: "bold", color: MIPO_COLORS.text },
+        tabBarActiveTintColor: THEME.primary,
+        tabBarInactiveTintColor: THEME.textMuted,
+        tabBarStyle: {
+          height: 64 + (insets.bottom || 0),
+          paddingBottom: (insets.bottom || 0) + 8,
+          paddingTop: 8,
+          backgroundColor: "#fff",
+          borderTopWidth: 0,
+          elevation: 12,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.06,
+          shadowRadius: 12,
+        },
+        tabBarLabelStyle: { fontWeight: "600", fontSize: 12 },
+        headerTitleStyle: { fontWeight: "bold", color: THEME.text },
+        headerStyle: {
+          backgroundColor: THEME.primary,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
       }}
     >
       <Tab.Screen
@@ -126,8 +152,15 @@ function Routes() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={MIPO_COLORS.primary} />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: THEME.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={THEME.primary} />
       </View>
     );
   }
@@ -143,9 +176,11 @@ function Routes() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: MIPO_COLORS.primary },
+        headerStyle: { backgroundColor: THEME.primary },
         headerTintColor: "#fff",
-        headerTitleStyle: { fontWeight: "bold" },
+        headerTitleStyle: { fontWeight: "bold", fontSize: 18 },
+        headerBackTitleVisible: false,
+        cardStyle: { backgroundColor: THEME.background },
       }}
     >
       {/* A navegação base agora é o TabNavigator para todos */}
@@ -165,6 +200,11 @@ function Routes() {
         name="CreateChatGroup"
         component={CreateChatGroupScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="CriarSala"
+        component={CreateRoomScreen}
+        options={{ title: "Criar Sala" }}
       />
       <Stack.Screen
         name="PlayerProfile"
@@ -228,6 +268,16 @@ function Routes() {
         name="AdminNotifications"
         component={AdminSendNotificationScreen}
         options={{ title: "Notificações" }}
+      />
+      <Stack.Screen
+        name="GamesList"
+        component={GamesListScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="GameDetail"
+        component={GameDetailScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

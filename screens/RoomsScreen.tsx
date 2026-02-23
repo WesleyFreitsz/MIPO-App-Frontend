@@ -5,10 +5,12 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   Modal,
   Image,
   ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
 import {
   DoorOpen,
@@ -18,103 +20,155 @@ import {
   X,
   CheckCircle2,
 } from "lucide-react-native";
+import { FadeInView } from "../components/FadeInView";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../services/api";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const mockRooms = [
-  {
-    id: "1",
-    organizer: "Carlos M.",
-    game: "Dixit",
-    date: "Hoje",
-    time: "20:00",
-    participants: 3,
-    maxParticipants: 6,
-    isPublic: true,
-    description:
-      "Uma partida leve para relaxar e usar a imaginação. Aceitamos novatos!",
-  },
-  {
-    id: "2",
-    organizer: "Ana S.",
-    game: "Azul",
-    date: "Amanhã",
-    time: "15:00",
-    participants: 2,
-    maxParticipants: 4,
-    isPublic: true,
-    description: "Busco jogadores que já conheçam as regras básicas de Azul.",
-  },
-  {
-    id: "3",
-    organizer: "Pedro L.",
-    game: "Pandemic",
-    date: "Amanhã",
-    time: "19:00",
-    participants: 4,
-    maxParticipants: 4,
-    isPublic: false,
-    description: "Grupo fechado para campanha.",
-  },
-];
+interface Room {
+  id: string;
+  game: string;
+  organizer: { id: string; name: string } | null;
+  date: string;
+  time: string;
+  participants: number;
+  maxParticipants: number;
+  isPublic: boolean;
+  description: string | null;
+  chatId?: string | null;
+}
 
 export default function RoomsScreen({ navigation }: any) {
-  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const queryClient = useQueryClient();
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const renderRoom = ({ item }: { item: (typeof mockRooms)[0] }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.gameTitle}>{item.game}</Text>
-          <Text style={styles.organizer}>Organizado por {item.organizer}</Text>
-        </View>
-        <View
-          style={[
-            styles.badge,
-            { backgroundColor: item.isPublic ? "#dcfce7" : "#fee2e2" },
-          ]}
-        >
-          <Text
-            style={{
-              color: item.isPublic ? "#166534" : "#991b1b",
-              fontSize: 10,
-              fontWeight: "bold",
-            }}
+  const {
+    data: rooms = [],
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["rooms"],
+    queryFn: async () => {
+      const res = await api.get("/rooms", { params: { skip: 0, take: 30 } });
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+
+  const joinMutation = useMutation({
+    mutationFn: (roomId: string) => api.post(`/rooms/${roomId}/join`),
+    onSuccess: (response: any) => {
+      const data = response.data;
+      const chatId = data?.chatId || data?.room?.chatId;
+      const roomName = data?.room?.game || selectedRoom?.game;
+      setSelectedRoom(null);
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+      if (chatId) {
+        navigation.navigate("ChatDetail", { chatId, name: roomName });
+      } else {
+        Alert.alert("Sucesso", "Você entrou na sala!");
+      }
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Erro",
+        error.response?.data?.message || "Erro ao entrar na sala",
+      );
+    },
+  });
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
+  const handleJoinRoom = (room: Room) => {
+    setSelectedRoom(room);
+  };
+
+  const handleConfirmJoin = () => {
+    if (!selectedRoom) return;
+    if (selectedRoom.participants >= selectedRoom.maxParticipants) {
+      Alert.alert("Sala cheia", "Esta sala já está lotada.");
+      setSelectedRoom(null);
+      return;
+    }
+    joinMutation.mutate(selectedRoom.id);
+  };
+
+  const organizerName = selectedRoom?.organizer?.name ?? "Organizador";
+
+  const renderRoom = ({ item, index }: { item: Room; index: number }) => {
+    const organizerName = item.organizer?.name ?? "Organizador";
+    const participants = item.participants ?? 0;
+    const maxParticipants = item.maxParticipants ?? 4;
+    const isFull = participants >= maxParticipants;
+
+    return (
+      <FadeInView delay={index * 80} style={styles.cardWrapper}>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View>
+              <Text style={styles.gameTitle}>{item.game}</Text>
+              <Text style={styles.organizer}>
+                Organizado por {organizerName}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: item.isPublic ? "#dcfce7" : "#fee2e2" },
+              ]}
+            >
+              <Text
+                style={{
+                  color: item.isPublic ? "#166534" : "#991b1b",
+                  fontSize: 10,
+                  fontWeight: "bold",
+                }}
+              >
+                {item.isPublic ? "PÚBLICA" : "PRIVADA"}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <View style={styles.infoItem}>
+              <Clock size={16} color="#64748b" />
+              <Text style={styles.infoText}>
+                {item.date} às {item.time}
+              </Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Users size={16} color="#64748b" />
+              <Text style={styles.infoText}>
+                {participants}/{maxParticipants}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.joinButton, isFull && styles.disabledButton]}
+            disabled={isFull}
+            onPress={() => handleJoinRoom(item)}
           >
-            {item.isPublic ? "PÚBLICA" : "PRIVADA"}
-          </Text>
+            <Text style={styles.joinButtonText}>
+              {isFull ? "Sala Cheia" : "Ver Detalhes"}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
+      </FadeInView>
+    );
+  };
 
-      <View style={styles.infoRow}>
-        <View style={styles.infoItem}>
-          <Clock size={16} color="#64748b" />
-          <Text style={styles.infoText}>
-            {item.date} às {item.time}
-          </Text>
-        </View>
-        <View style={styles.infoItem}>
-          <Users size={16} color="#64748b" />
-          <Text style={styles.infoText}>
-            {item.participants}/{item.maxParticipants}
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={[
-          styles.joinButton,
-          item.participants === item.maxParticipants && styles.disabledButton,
-        ]}
-        disabled={item.participants === item.maxParticipants}
-        onPress={() => setSelectedRoom(item)}
-      >
-        <Text style={styles.joinButtonText}>
-          {item.participants === item.maxParticipants
-            ? "Sala Cheia"
-            : "Ver Detalhes"}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+  if (isLoading && rooms.length === 0) {
+    return (
+      <SafeAreaView style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#c73636" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -130,13 +184,19 @@ export default function RoomsScreen({ navigation }: any) {
       </View>
 
       <FlatList
-        data={mockRooms}
+        data={rooms}
         renderItem={renderRoom}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#c73636"]}
+          />
+        }
       />
 
-      {/* Modal de Detalhes da Sala */}
       <Modal
         visible={!!selectedRoom}
         animationType="slide"
@@ -162,25 +222,21 @@ export default function RoomsScreen({ navigation }: any) {
             <ScrollView style={styles.modalBody}>
               <Text style={styles.modalTitle}>{selectedRoom?.game}</Text>
               <Text style={styles.modalOrganizer}>
-                Organizado por {selectedRoom?.organizer}
+                Organizado por {organizerName}
               </Text>
 
               <Text style={styles.sectionTitle}>Descrição</Text>
               <Text style={styles.modalDescription}>
-                {selectedRoom?.description}
+                {selectedRoom?.description || "Sem descrição."}
               </Text>
 
-              <Text style={styles.sectionTitle}>Jogadores Atuais</Text>
+              <Text style={styles.sectionTitle}>Participantes</Text>
               <View style={styles.playerList}>
                 <View style={styles.playerItem}>
-                  <CheckCircle2 size={16} color="#6366f1" />
+                  <CheckCircle2 size={16} color="#c73636" />
                   <Text style={styles.playerName}>
-                    {selectedRoom?.organizer} (Mestre)
+                    {organizerName} (Mestre)
                   </Text>
-                </View>
-                <View style={styles.playerItem}>
-                  <CheckCircle2 size={16} color="#6366f1" />
-                  <Text style={styles.playerName}>Jogador 2</Text>
                 </View>
               </View>
             </ScrollView>
@@ -188,15 +244,20 @@ export default function RoomsScreen({ navigation }: any) {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.confirmBtn}
-                onPress={() => {
-                  const roomName = selectedRoom.game;
-                  setSelectedRoom(null);
-                  navigation.navigate("ChatDetail", { name: roomName });
-                }}
+                onPress={handleConfirmJoin}
+                disabled={
+                  joinMutation.isPending ||
+                  (selectedRoom?.participants ?? 0) >=
+                    (selectedRoom?.maxParticipants ?? 4)
+                }
               >
-                <Text style={styles.confirmBtnText}>
-                  Confirmar e Entrar no Chat
-                </Text>
+                {joinMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>
+                    Confirmar e Entrar no Chat
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -207,7 +268,8 @@ export default function RoomsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { flex: 1, backgroundColor: "#faf6f1" },
+  centered: { justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -220,7 +282,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: "bold", color: "#1e293b" },
   createButton: {
     flexDirection: "row",
-    backgroundColor: "#6366f1",
+    backgroundColor: "#c73636",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -228,6 +290,7 @@ const styles = StyleSheet.create({
   },
   createButtonText: { color: "#fff", fontWeight: "bold", marginLeft: 4 },
   listContent: { padding: 16 },
+  cardWrapper: { marginBottom: 16 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -250,7 +313,7 @@ const styles = StyleSheet.create({
   infoItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   infoText: { fontSize: 14, color: "#475569" },
   joinButton: {
-    backgroundColor: "#6366f1",
+    backgroundColor: "#c73636",
     height: 44,
     borderRadius: 10,
     justifyContent: "center",
@@ -259,7 +322,6 @@ const styles = StyleSheet.create({
   joinButtonText: { color: "#fff", fontWeight: "600" },
   disabledButton: { backgroundColor: "#cbd5e1" },
 
-  // Estilos do Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -276,7 +338,7 @@ const styles = StyleSheet.create({
   roomImage: { width: "100%", height: 180, marginTop: -40 },
   modalBody: { padding: 20 },
   modalTitle: { fontSize: 24, fontWeight: "bold", color: "#1e293b" },
-  modalOrganizer: { fontSize: 16, color: "#6366f1", marginBottom: 20 },
+  modalOrganizer: { fontSize: 16, color: "#c73636", marginBottom: 20 },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "bold",
@@ -295,7 +357,7 @@ const styles = StyleSheet.create({
   playerName: { fontSize: 15, color: "#334155" },
   modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: "#f1f5f9" },
   confirmBtn: {
-    backgroundColor: "#6366f1",
+    backgroundColor: "#c73636",
     height: 54,
     borderRadius: 12,
     justifyContent: "center",

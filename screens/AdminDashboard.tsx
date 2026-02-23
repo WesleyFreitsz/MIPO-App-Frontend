@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
 } from "react-native";
 import {
   Users,
@@ -18,6 +17,7 @@ import {
   CheckSquare,
   PlusCircle,
 } from "lucide-react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const AdminMenuCard = ({ title, icon: Icon, color, onPress }: any) => (
   <TouchableOpacity style={styles.menuCard} onPress={onPress}>

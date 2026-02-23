@@ -6,57 +6,99 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
-import { MessageSquare } from "lucide-react-native";
-
-const mockChats = [
-  {
-    id: "1",
-    name: "Sala de Dixit",
-    lastMsg: "Carlos: Bora começar?",
-    time: "10:30",
-    image: "https://api.dicebear.com/7.x/initials/svg?seed=DX",
-  },
-  {
-    id: "2",
-    name: "Torneio de War",
-    lastMsg: "Você: Estou chegando!",
-    time: "Ontem",
-    image: "https://api.dicebear.com/7.x/initials/svg?seed=WR",
-  },
-];
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function ChatsListScreen({ navigation }: any) {
+  const { user } = useAuth();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["chats"],
+    queryFn: async () => {
+      const res = await api.get("/chats", { params: { skip: 0, take: 50 } });
+      return res.data;
+    },
+  });
+
+  const chats = data?.data || [];
+
+  const renderItem = ({ item }: any) => {
+    // For private chats, find the other user
+    const otherMember = item.members?.find((m: any) => m.userId !== user?.id);
+    const title =
+      item.type === "PRIVATE"
+        ? otherMember?.user?.nickname || otherMember?.user?.name
+        : item.name;
+    const avatar =
+      item.type === "PRIVATE"
+        ? otherMember?.user?.avatarUrl ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${title}`
+        : item.imageUrl ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`;
+    const lastMsgText = item.lastMessage
+      ? `${item.lastMessage.user?.nickname || item.lastMessage.user?.name}: ${item.lastMessage.content}`
+      : item.lastMessage?.content || "";
+
+    return (
+      <TouchableOpacity
+        style={styles.chatItem}
+        onPress={() =>
+          navigation.navigate("ChatDetail", { chatId: item.id, name: title })
+        }
+      >
+        <Image source={{ uri: avatar }} style={styles.avatar} />
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={styles.name}>{title}</Text>
+            <Text style={styles.time}>
+              {item.lastMessage?.createdAt
+                ? new Date(item.lastMessage.createdAt).toLocaleDateString()
+                : ""}
+            </Text>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <Text style={styles.lastMsg} numberOfLines={1}>
+              {lastMsgText}
+            </Text>
+            {item.unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>{item.unreadCount}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={mockChats}
+        data={chats}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.chatItem}
-            onPress={() =>
-              navigation.navigate("ChatDetail", { name: item.name })
-            }
-          >
-            <Image source={{ uri: item.image }} style={styles.avatar} />
-            <View style={styles.content}>
-              <View style={styles.header}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.time}>{item.time}</Text>
-              </View>
-              <Text style={styles.lastMsg} numberOfLines={1}>
-                {item.lastMsg}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
+        renderItem={renderItem}
+        ListEmptyComponent={() => (
           <View style={styles.empty}>
-            <MessageSquare size={48} color="#cbd5e1" />
             <Text style={styles.emptyText}>Nenhuma conversa ainda.</Text>
           </View>
-        }
+        )}
       />
     </View>
   );
@@ -85,7 +127,7 @@ const styles = StyleSheet.create({
   },
   name: { fontWeight: "bold", fontSize: 16, color: "#1e293b" },
   time: { fontSize: 12, color: "#94a3b8" },
-  lastMsg: { fontSize: 14, color: "#64748b" },
+  lastMsg: { fontSize: 14, color: "#64748b", flex: 1 },
   empty: {
     flex: 1,
     justifyContent: "center",
@@ -93,4 +135,15 @@ const styles = StyleSheet.create({
     marginTop: 100,
   },
   emptyText: { color: "#94a3b8", marginTop: 12 },
+  unreadBadge: {
+    backgroundColor: "#ef4444",
+    minWidth: 20,
+    paddingHorizontal: 6,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  unreadText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 });

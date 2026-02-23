@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
-  SafeAreaView,
 } from "react-native";
 import {
   Edit3,
@@ -24,6 +23,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AdminEventsManagementScreen({ navigation }: any) {
   const { user } = useAuth();

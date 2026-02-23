@@ -8,36 +8,62 @@ import {
   TouchableOpacity,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Gift, Plus, Trash2, Edit3, Coins, Package } from "lucide-react-native";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../services/api";
 
-const mockRewards = [
-  { id: "1", title: "Cupom 10% Desconto", price: 50, stock: 100 },
-  { id: "2", title: "Dado de Metal (D20)", price: 150, stock: 15 },
-];
+interface Reward {
+  id: string;
+  title: string;
+  price: number;
+  stock: number;
+}
 
 export default function AdminRewardsScreen() {
-  const [rewards, setRewards] = useState(mockRewards);
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("");
 
+  const { data: rewards = [], isLoading } = useQuery({
+    queryKey: ["rewards"],
+    queryFn: async () => {
+      const res = await api.get("/rewards");
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (dto: { title: string; price: number; stock: number }) =>
+      api.post("/rewards", dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rewards"] });
+      setTitle("");
+      setPrice("");
+      setStock("");
+      Alert.alert("Sucesso", "Recompensa cadastrada!");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/rewards/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rewards"] });
+    },
+  });
+
   const handleAddReward = () => {
-    if (!title || !price || !stock) {
+    if (!title.trim() || !price.trim() || !stock.trim()) {
       Alert.alert("Erro", "Preencha todos os campos da recompensa.");
       return;
     }
-    const newReward = {
-      id: Math.random().toString(),
-      title,
-      price: parseInt(price),
-      stock: parseInt(stock),
-    };
-    setRewards([newReward, ...rewards]);
-    setTitle("");
-    setPrice("");
-    setStock("");
-    Alert.alert("Sucesso", "Recompensa cadastrada!");
+    createMutation.mutate({
+      title: title.trim(),
+      price: parseInt(price, 10),
+      stock: parseInt(stock, 10),
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -45,11 +71,19 @@ export default function AdminRewardsScreen() {
       { text: "Cancelar", style: "cancel" },
       {
         text: "Excluir",
-        onPress: () => setRewards(rewards.filter((r) => r.id !== id)),
+        onPress: () => deleteMutation.mutate(id),
         style: "destructive",
       },
     ]);
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#E11D48" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -87,7 +121,16 @@ export default function AdminRewardsScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.addButton} onPress={handleAddReward}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={handleAddReward}
+          disabled={
+            createMutation.isPending ||
+            !title.trim() ||
+            !price.trim() ||
+            !stock.trim()
+          }
+        >
           <Plus color="#fff" size={20} />
           <Text style={styles.addButtonText}>Cadastrar Recompensa</Text>
         </TouchableOpacity>
@@ -134,6 +177,7 @@ export default function AdminRewardsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
+  centered: { justifyContent: "center", alignItems: "center" },
   formContainer: {
     padding: 20,
     backgroundColor: "#fff",

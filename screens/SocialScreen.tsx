@@ -8,7 +8,6 @@ import {
   FlatList,
   Image,
   TextInput,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
   Alert,
@@ -29,6 +28,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 interface Post {
   id: string;
@@ -59,11 +59,11 @@ interface Chat {
 }
 
 const MIPO_COLORS = {
-  primary: "#E11D48",
-  background: "#f8fafc",
-  text: "#1e293b",
-  textLighter: "#64748b",
-  border: "#e2e8f0",
+  primary: "#c73636",
+  background: "#faf6f1",
+  text: "#1c1917",
+  textLighter: "#78716c",
+  border: "#e7e5e4",
   white: "#ffffff",
 };
 

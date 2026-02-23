@@ -9,13 +9,13 @@ import {
   Image,
   Alert,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
 } from "react-native";
 import { ChevronLeft, Plus, Check } from "lucide-react-native";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 interface Friend {
   id: string;

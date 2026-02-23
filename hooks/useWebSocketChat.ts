@@ -28,7 +28,9 @@ interface UseWebSocketChatReturn {
   leaveChat: (chatId: string) => void;
 }
 
-const WS_URL = "http://localhost:3000";
+import { api } from "../services/api";
+
+const WS_URL = api.defaults.baseURL || "http://localhost:3000";
 
 export const useWebSocketChat = (): UseWebSocketChatReturn => {
   const { user, token } = useAuth();
@@ -41,8 +43,7 @@ export const useWebSocketChat = (): UseWebSocketChatReturn => {
   useEffect(() => {
     if (!user?.id || !token) return;
 
-    const newSocket = io(WS_URL, {
-      namespace: "/chats",
+    const newSocket = io(`${WS_URL}/chats`, {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

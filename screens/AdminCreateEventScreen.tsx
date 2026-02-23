@@ -125,6 +125,7 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
         style={styles.bannerButton}
         onPress={async () => {
           const res = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
             allowsEditing: true,
             aspect: [16, 9],
             quality: 0.5,

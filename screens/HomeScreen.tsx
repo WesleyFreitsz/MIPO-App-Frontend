@@ -17,23 +17,34 @@ import {
   TrendingUp,
   X,
   MapPin,
-  Clock,
   CheckCircle,
   MessageCircle,
   Camera,
+  Gamepad2,
 } from "lucide-react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import * as ImagePicker from "expo-image-picker"; // Certifique-se de ter instalado
+import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 const { width } = Dimensions.get("window");
+const COLORS = {
+  primary: "#c73636",
+  background: "#faf6f1",
+  card: "#ffffff",
+  text: "#1c1917",
+};
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [nextEvents, setNextEvents] = useState<any[]>([]);
+  const [featuredGames, setFeaturedGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
   useEffect(() => {
     (async () => {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -45,47 +56,43 @@ export default function HomeScreen() {
       }
     })();
   }, []);
-  // Estados para o Modal de Detalhes
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
-  const [modalVisible, setModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      fetchEvents();
-    }, [modalVisible]), // Atualiza quando fecha o modal também
+      fetchDashboardData();
+    }, [modalVisible]),
   );
 
-  async function fetchEvents() {
+  async function fetchDashboardData() {
     try {
-      const response = await api.get("/events");
+      // Busca Eventos
+      const resEvents = await api.get("/events");
       const now = new Date();
-
-      // Filtra apenas eventos APROVADOS e que não passaram do dia de hoje
-      const active = response.data
-        .filter((e: any) => {
-          const eventDate = new Date(e.dateTime);
-          return (
-            eventDate >= new Date(now.setHours(0, 0, 0, 0)) &&
-            e.status === "APPROVED"
-          );
-        })
+      const activeEvents = resEvents.data
+        .filter(
+          (e: any) =>
+            new Date(e.dateTime) >= new Date(now.setHours(0, 0, 0, 0)) &&
+            e.status === "APPROVED",
+        )
         .sort(
           (a: any, b: any) =>
             new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime(),
         )
         .slice(0, 3);
+      setNextEvents(activeEvents);
 
-      setNextEvents(active);
+      // Busca Jogos em Destaque
+      const resGames = await api.get("/games?isFeatured=true");
+      setFeaturedGames(resGames.data);
 
-      // Se o modal estiver aberto, atualiza o objeto do evento selecionado (para ver participantes em tempo real)
       if (modalVisible && selectedEvent) {
-        const updated = response.data.find(
+        const updated = resEvents.data.find(
           (e: any) => e.id === selectedEvent.id,
         );
         if (updated) setSelectedEvent(updated);
       }
     } catch (error) {
-      console.log("Erro ao buscar eventos", error);
+      console.log("Erro ao buscar dados", error);
     } finally {
       setLoading(false);
     }
@@ -94,44 +101,41 @@ export default function HomeScreen() {
   const handleToggleParticipation = async () => {
     try {
       await api.post(`/events/${selectedEvent.id}/toggle`);
-      fetchEvents(); // Recarrega dados para atualizar lista de participantes
+      fetchDashboardData();
     } catch (e) {
       Alert.alert("Erro", "Não foi possível atualizar sua presença.");
     }
   };
 
   const handleCheckIn = async () => {
-    // Configurações da câmera: permite edição (crop) e define a qualidade
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
-      aspect: [1, 1], // Opcional: força a foto a ser quadrada
+      aspect: [1, 1],
       quality: 0.5,
     });
 
-    // Verifica se o usuário não cancelou a foto
     if (!result.canceled) {
       try {
-        // Envia a requisição para a rota de check-in que você criou no backend
         await api.post(`/events/${selectedEvent.id}/checkin`);
-
         Alert.alert(
           "Sucesso!",
           "Check-in realizado! Você ganhou pontos de participação.",
         );
-
         setModalVisible(false);
-        fetchEvents(); // Atualiza a lista para mostrar que você já fez o check-in
+        fetchDashboardData();
       } catch (e: any) {
-        const msg = e.response?.data?.message || "Falha ao realizar check-in.";
-        Alert.alert("Erro", msg);
+        Alert.alert(
+          "Erro",
+          e.response?.data?.message || "Falha ao realizar check-in.",
+        );
       }
     }
   };
+
   const now = new Date();
   const eventStartTime = selectedEvent
     ? new Date(selectedEvent.dateTime)
     : null;
-
   const getDay = (dateIso: string) => new Date(dateIso).getDate();
   const getMonth = (dateIso: string) =>
     new Date(dateIso)
@@ -144,7 +148,6 @@ export default function HomeScreen() {
       minute: "2-digit",
     });
 
-  // Verificações de estado para o usuário logado
   const isConfirmed = selectedEvent?.participants?.some(
     (p: any) => p.id === user?.id,
   );
@@ -152,15 +155,17 @@ export default function HomeScreen() {
     selectedEvent &&
     new Date().toDateString() ===
       new Date(selectedEvent.dateTime).toDateString();
-
   const hasCheckedIn = selectedEvent?.checkedInUserIds?.includes(user?.id);
-
   const canShowCheckIn =
     isConfirmed && eventStartTime && now >= eventStartTime && !hasCheckedIn;
+
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container} bounces={false}>
-        {/* Banner Principal */}
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <ScrollView
+        style={styles.container}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.bannerContainer}>
           <Image
             source={require("../assets/Captura de tela 2026-02-16 223704.png")}
@@ -170,7 +175,6 @@ export default function HomeScreen() {
           <View style={styles.bannerOverlay} />
         </View>
 
-        {/* Stats */}
         <View style={styles.statsGrid}>
           {[
             { icon: Users, label: "Jogadores", value: "248" },
@@ -178,14 +182,76 @@ export default function HomeScreen() {
             { icon: TrendingUp, label: "Partidas", value: "1.2k" },
           ].map((stat, i) => (
             <View key={i} style={styles.statCard}>
-              <stat.icon size={22} color="#E11D48" />
+              <View style={styles.statIconWrap}>
+                <stat.icon size={20} color={COLORS.primary} />
+              </View>
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
             </View>
           ))}
         </View>
 
-        {/* Swiper de Eventos */}
+        {/* NOSSOS JOGOS */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🎯 Nossos Jogos</Text>
+            <TouchableOpacity onPress={() => navigation.navigate("GamesList")}>
+              <Text style={styles.seeMore}>Ver todos</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator color={COLORS.primary} />
+          ) : featuredGames.length === 0 ? (
+            <Text style={styles.emptyText}>
+              Nenhum jogo em destaque no momento.
+            </Text>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 20 }}
+            >
+              {featuredGames.map((game) => (
+                <TouchableOpacity
+                  key={game.id}
+                  style={styles.gameCard}
+                  onPress={() =>
+                    navigation.navigate("GameDetail", { gameId: game.id })
+                  }
+                >
+                  {game.imageUrl ? (
+                    <Image
+                      source={{ uri: game.imageUrl }}
+                      style={styles.gameImage}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.gameImage,
+                        {
+                          backgroundColor: "#e2e8f0",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        },
+                      ]}
+                    >
+                      <Gamepad2 color="#94a3b8" size={32} />
+                    </View>
+                  )}
+                  <View style={styles.gameContent}>
+                    <Text style={styles.gameTitle} numberOfLines={1}>
+                      {game.name}
+                    </Text>
+                    <Text style={styles.gameCategory}>{game.category}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* EVENTOS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>🎲 Próximos Eventos</Text>
@@ -195,7 +261,7 @@ export default function HomeScreen() {
           </View>
 
           {loading ? (
-            <ActivityIndicator color="#E11D48" />
+            <ActivityIndicator color={COLORS.primary} />
           ) : nextEvents.length === 0 ? (
             <Text style={styles.emptyText}>
               Nenhum evento agendado em breve.
@@ -243,7 +309,6 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Salas */}
         <View style={[styles.section, { marginBottom: 30 }]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>🏠 Salas Recentes</Text>
@@ -284,7 +349,7 @@ export default function HomeScreen() {
                   style={[
                     styles.modalBanner,
                     {
-                      backgroundColor: "#E11D48",
+                      backgroundColor: "#c73636",
                       justifyContent: "center",
                       alignItems: "center",
                     },
@@ -300,7 +365,7 @@ export default function HomeScreen() {
                 </Text>
 
                 <View style={styles.detailRow}>
-                  <Calendar size={18} color="#E11D48" />
+                  <Calendar size={18} color="#c73636" />
                   <Text style={styles.detailText}>
                     {selectedEvent &&
                       new Date(
@@ -311,7 +376,7 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.detailRow}>
-                  <MapPin size={18} color="#E11D48" />
+                  <MapPin size={18} color="#c73636" />
                   <Text style={styles.detailText}>
                     {selectedEvent?.space === "PERSONALIZADO"
                       ? selectedEvent.customLocation
@@ -368,7 +433,6 @@ export default function HomeScreen() {
                       Cancelar Presença
                     </Text>
                   </TouchableOpacity>
-
                   <TouchableOpacity
                     style={styles.chatButton}
                     onPress={() => {
@@ -396,7 +460,7 @@ export default function HomeScreen() {
               {isConfirmed && isEventDay && canShowCheckIn && (
                 <TouchableOpacity
                   style={styles.checkInButton}
-                  onPress={handleCheckIn} // Chama a função que abre a câmera
+                  onPress={handleCheckIn}
                 >
                   <Camera color="#fff" size={20} />
                   <Text style={styles.confirmButtonText}>
@@ -413,7 +477,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { flex: 1, backgroundColor: "#faf6f1" },
   bannerContainer: { height: 230, width: width, overflow: "hidden" },
   bannerImage: { width: width, height: 230 },
   bannerOverlay: {
@@ -433,10 +497,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: "30%",
     alignItems: "center",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    elevation: 6,
+  },
+  statIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#fef2f2",
+    justifyContent: "center",
+    alignItems: "center",
   },
   statValue: {
     fontSize: 18,
@@ -453,7 +522,30 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   sectionTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
-  seeMore: { color: "#E11D48", fontWeight: "600" },
+  seeMore: { color: "#c73636", fontWeight: "600", fontSize: 14 },
+  emptyText: {
+    color: "#94a3b8",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 10,
+  },
+
+  // Games
+  gameCard: {
+    width: 140,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginRight: 15,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  gameImage: { width: "100%", height: 140 },
+  gameContent: { padding: 12 },
+  gameTitle: { fontSize: 14, fontWeight: "bold", color: "#1e293b" },
+  gameCategory: { fontSize: 12, color: "#64748b", marginTop: 2 },
+
+  // Events
   swiperContainer: { paddingRight: 40 },
   swiperCard: {
     width: width - 40,
@@ -473,26 +565,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: 60,
   },
-  dateDay: { fontSize: 18, fontWeight: "bold", color: "#E11D48" },
+  dateDay: { fontSize: 18, fontWeight: "bold", color: "#c73636" },
   dateMonth: { fontSize: 10, fontWeight: "bold", color: "#64748b" },
   eventInfo: { flex: 1, marginLeft: 15 },
   eventTitle: { fontSize: 16, fontWeight: "bold", color: "#1e293b" },
   eventDetails: { fontSize: 13, color: "#64748b", marginTop: 2 },
   eventAction: {
-    backgroundColor: "#E11D48",
+    backgroundColor: "#c73636",
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 10,
   },
   actionText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
-  emptyText: {
-    color: "#94a3b8",
-    fontStyle: "italic",
-    textAlign: "center",
-    marginTop: 10,
-  },
 
-  // Modal Styles
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -531,8 +617,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   descriptionText: { color: "#64748b", fontSize: 15, lineHeight: 22 },
-
-  // Participantes Reais (Bolinhas)
   participantRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -550,7 +634,7 @@ const styles = StyleSheet.create({
     height: 45,
     borderRadius: 22.5,
     borderWidth: 2,
-    borderColor: "#E11D48",
+    borderColor: "#c73636",
   },
   miniName: {
     fontSize: 10,
@@ -566,12 +650,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 2,
   },
-
-  // Botões de Ação
   modalFooter: { paddingHorizontal: 20, gap: 10 },
   actionRow: { flexDirection: "row", gap: 10, width: "100%" },
   confirmButton: {
-    backgroundColor: "#E11D48",
+    backgroundColor: "#c73636",
     padding: 16,
     borderRadius: 15,
     alignItems: "center",
@@ -588,7 +670,7 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: "#64748b", fontWeight: "bold", fontSize: 15 },
   chatButton: {
     flex: 1,
-    backgroundColor: "#6366f1",
+    backgroundColor: "#0d9488",
     padding: 16,
     borderRadius: 15,
     alignItems: "center",

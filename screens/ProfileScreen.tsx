@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,14 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  SafeAreaView,
   FlatList,
   Modal,
+  Platform,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   Camera,
   MapPin,
@@ -27,13 +30,14 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 
 const MIPO_COLORS = {
-  primary: "#E11D48",
-  background: "#f8fafc",
-  text: "#1e293b",
-  textLighter: "#64748b",
-  border: "#e2e8f0",
+  primary: "#c73636",
+  background: "#faf6f1",
+  text: "#1c1917",
+  textLighter: "#78716c",
+  border: "#e7e5e4",
   white: "#ffffff",
 };
 
@@ -94,8 +98,56 @@ export default function ProfileScreen({ route }: any) {
   const [nickname, setNickname] = useState(user?.nickname || "");
   const [city, setCity] = useState(user?.city || "");
   const [image, setImage] = useState(user?.avatarUrl || null);
+  const [isUploading, setIsUploading] = useState(false);
+  const insets = useSafeAreaInsets();
 
-  // Fetch posts do usuário
+  useEffect(() => {
+    if (user?.nickname !== nickname) {
+      setNickname(user?.nickname || "");
+    }
+    if (user?.city !== city) {
+      setCity(user?.city || "");
+    }
+    // Aceita tanto a URL antiga (http) quanto a nova string Base64 (data:)
+    if (user?.avatarUrl) {
+      setImage(user.avatarUrl);
+    }
+  }, [user?.id]);
+
+  const uploadImageAsync = async (uri: string) => {
+    // Se já é URL http ou Base64 (data:), não faz upload novamente
+    if (uri.startsWith("http") || uri.startsWith("data:")) {
+      return uri;
+    }
+
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : "image/jpeg";
+
+      // @ts-ignore
+      formData.append("file", { uri, name: filename, type });
+
+      const res = await api.post("/uploads/avatar", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return res.data.url; // Retorna a string Base64
+    } catch (err: any) {
+      console.error("Upload error response:", err?.response?.data);
+      Alert.alert(
+        "Erro",
+        err?.response?.data?.message || "Falha ao converter e enviar imagem",
+      );
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const { data: postsData, isLoading: postsLoading } = useQuery({
     queryKey: ["posts", "user", user?.id],
     queryFn: async () => {
@@ -107,7 +159,6 @@ export default function ProfileScreen({ route }: any) {
     enabled: !!user?.id,
   });
 
-  // Mutations
   const createPostMutation = useMutation({
     mutationFn: (data: any) => api.post("/posts", data),
     onSuccess: () => {
@@ -144,12 +195,12 @@ export default function ProfileScreen({ route }: any) {
 
     setLoading(true);
     try {
-      await api.patch("/users/profile", {
+      const profileData = {
         nickname,
         city,
         avatarUrl: image,
-      });
-
+      };
+      await api.patch("/users/profile", profileData);
       await refreshUser();
       setEditMode(false);
       Alert.alert("Sucesso", "Perfil atualizado!");
@@ -192,7 +243,6 @@ export default function ProfileScreen({ route }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* MODAL DE CRIAR POST */}
       <Modal
         visible={showCreatePostModal}
         animationType="slide"
@@ -247,11 +297,15 @@ export default function ProfileScreen({ route }: any) {
               style={styles.selectImageBtn}
               onPress={async () => {
                 const result = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ["images"], // Atualizado
                   allowsEditing: true,
+                  aspect: [1, 1],
                   quality: 0.5,
                 });
                 if (!result.canceled) {
-                  setPostImage(result.assets[0].uri);
+                  const uri = result.assets[0].uri;
+                  const uploaded = await uploadImageAsync(uri);
+                  setPostImage(uploaded || uri);
                 }
               }}
             >
@@ -260,7 +314,12 @@ export default function ProfileScreen({ route }: any) {
             </TouchableOpacity>
           </ScrollView>
 
-          <View style={styles.modalFooter}>
+          <View
+            style={[
+              styles.modalFooter,
+              { paddingBottom: (insets.bottom || 0) + 12 },
+            ]}
+          >
             <TouchableOpacity
               style={styles.publishBtn}
               onPress={handleCreatePost}
@@ -276,18 +335,18 @@ export default function ProfileScreen({ route }: any) {
         </SafeAreaView>
       </Modal>
 
-      {/* CONTEÚDO PRINCIPAL */}
       <ScrollView>
-        {/* HEADER DO PERFIL */}
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
             <Image
+              key={image}
               source={{
                 uri:
                   image ||
                   `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
               }}
               style={styles.avatar}
+              resizeMode="cover"
             />
             {editMode && (
               <TouchableOpacity
@@ -298,7 +357,13 @@ export default function ProfileScreen({ route }: any) {
                     aspect: [1, 1],
                     quality: 0.5,
                   });
-                  if (!result.canceled) setImage(result.assets[0].uri);
+                  if (!result.canceled) {
+                    const uri = result.assets[0].uri;
+                    const uploaded = await uploadImageAsync(uri);
+                    if (uploaded) {
+                      setImage(uploaded);
+                    }
+                  }
                 }}
               >
                 <Camera color={MIPO_COLORS.white} size={20} />
@@ -328,9 +393,9 @@ export default function ProfileScreen({ route }: any) {
                 />
               </View>
               <TouchableOpacity
-                style={styles.saveBtn}
+                style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
                 onPress={handleSaveProfile}
-                disabled={loading}
+                disabled={loading || isUploading}
               >
                 {loading ? (
                   <ActivityIndicator color={MIPO_COLORS.white} />
@@ -363,7 +428,6 @@ export default function ProfileScreen({ route }: any) {
           )}
         </View>
 
-        {/* POSTS */}
         <View style={styles.postsSection}>
           <Text style={styles.sectionTitle}>
             Meus Posts ({postsData?.data?.length || 0})
@@ -400,7 +464,6 @@ export default function ProfileScreen({ route }: any) {
           )}
         </View>
 
-        {/* MENU */}
         {!editMode && (
           <View style={styles.menuContainer}>
             <TouchableOpacity style={styles.menuItem} onPress={signOut}>
@@ -505,6 +568,7 @@ const styles = StyleSheet.create({
   modalFooter: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingBottom: Platform.OS === "android" ? 28 : 12,
     backgroundColor: MIPO_COLORS.white,
     borderTopWidth: 1,
     borderTopColor: MIPO_COLORS.border,
@@ -563,6 +627,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 8,
+  },
+  saveBtnDisabled: {
+    opacity: 0.6,
   },
   saveBtnText: { color: MIPO_COLORS.white, fontWeight: "bold", fontSize: 14 },
   infoContainer: { alignItems: "center", marginTop: 12 },

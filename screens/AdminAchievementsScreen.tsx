@@ -7,25 +7,69 @@ import {
   TouchableOpacity,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Trophy, Plus, Trash2 } from "lucide-react-native";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../services/api";
+
+interface Achievement {
+  id: string;
+  title: string;
+  icon: string;
+}
 
 export default function AdminAchievementsScreen() {
-  const [achievements, setAchievements] = useState([
-    { id: "1", title: "Mestre de Catan", icon: "🎲" },
-    { id: "2", title: "Fiel à MIPO", icon: "🗓️" },
-  ]);
+  const queryClient = useQueryClient();
   const [newTitle, setNewTitle] = useState("");
 
+  const { data: achievements = [], isLoading } = useQuery({
+    queryKey: ["achievements"],
+    queryFn: async () => {
+      const res = await api.get("/achievements");
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (title: string) => api.post("/achievements", { title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["achievements"] });
+      setNewTitle("");
+      Alert.alert("Sucesso", "Conquista criada!");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/achievements/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["achievements"] });
+    },
+  });
+
   const addAchievement = () => {
-    if (!newTitle) return;
-    setAchievements([
-      ...achievements,
-      { id: Date.now().toString(), title: newTitle, icon: "🏆" },
-    ]);
-    setNewTitle("");
-    Alert.alert("Sucesso", "Conquista criada!");
+    if (!newTitle.trim()) return;
+    createMutation.mutate(newTitle.trim());
   };
+
+  const removeAchievement = (id: string) => {
+    Alert.alert("Excluir", "Deseja remover esta conquista?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Excluir",
+        onPress: () => deleteMutation.mutate(id),
+        style: "destructive",
+      },
+    ]);
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#E11D48" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -36,7 +80,11 @@ export default function AdminAchievementsScreen() {
           value={newTitle}
           onChangeText={setNewTitle}
         />
-        <TouchableOpacity style={styles.addBtn} onPress={addAchievement}>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={addAchievement}
+          disabled={createMutation.isPending || !newTitle.trim()}
+        >
           <Plus color="#fff" size={24} />
         </TouchableOpacity>
       </View>
@@ -46,13 +94,9 @@ export default function AdminAchievementsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.item}>
-            <Text style={styles.icon}>{item.icon}</Text>
+            <Text style={styles.icon}>{item.icon || "🏆"}</Text>
             <Text style={styles.itemTitle}>{item.title}</Text>
-            <TouchableOpacity
-              onPress={() =>
-                setAchievements(achievements.filter((a) => a.id !== item.id))
-              }
-            >
+            <TouchableOpacity onPress={() => removeAchievement(item.id)}>
               <Trash2 color="#ef4444" size={20} />
             </TouchableOpacity>
           </View>
@@ -64,6 +108,7 @@ export default function AdminAchievementsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc", padding: 20 },
+  centered: { justifyContent: "center", alignItems: "center" },
   form: { flexDirection: "row", gap: 10, marginBottom: 20 },
   input: {
     flex: 1,

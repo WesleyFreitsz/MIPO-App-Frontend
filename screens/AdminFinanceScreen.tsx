@@ -5,47 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   FlatList,
-  SafeAreaView,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import {
   TrendingUp,
   TrendingDown,
-  DollarSign,
-  CreditCard,
   ArrowUpRight,
   ArrowDownRight,
 } from "lucide-react-native";
-
-const mockTransactions = [
-  {
-    id: "1",
-    description: "Inscrição Torneio Catan",
-    value: 150.0,
-    type: "in",
-    date: "16 Fev",
-  },
-  {
-    id: "2",
-    description: "Compra Lote Magic",
-    value: 450.0,
-    type: "out",
-    date: "15 Fev",
-  },
-  {
-    id: "3",
-    description: "Aluguel Sala Pequena - João",
-    value: 45.0,
-    type: "in",
-    date: "15 Fev",
-  },
-  {
-    id: "4",
-    description: "Venda Jogo de Tabuleiro (Catan)",
-    value: 299.9,
-    type: "in",
-    date: "14 Fev",
-  },
-];
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../services/api";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const StatCard = ({ title, value, type }: any) => (
   <View style={styles.statCard}>
@@ -68,29 +39,82 @@ const StatCard = ({ title, value, type }: any) => (
         { color: type === "in" ? "#166534" : "#991b1b" },
       ]}
     >
-      R$ {value.toFixed(2)}
+      R$ {Number(value).toFixed(2)}
     </Text>
   </View>
 );
 
 export default function AdminFinanceScreen() {
-  const totalIn = mockTransactions
-    .filter((t) => t.type === "in")
-    .reduce((acc, curr) => acc + curr.value, 0);
-  const totalOut = mockTransactions
-    .filter((t) => t.type === "out")
-    .reduce((acc, curr) => acc + curr.value, 0);
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: ["finance", "summary"],
+    queryFn: async () => {
+      const res = await api.get("/finance/summary");
+      return res.data;
+    },
+  });
+
+  const {
+    data: transactions = [],
+    isLoading: transactionsLoading,
+    refetch: refetchTransactions,
+  } = useQuery({
+    queryKey: ["finance", "transactions"],
+    queryFn: async () => {
+      const res = await api.get("/finance/transactions", {
+        params: { skip: 0, take: 50 },
+      });
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+
+  const onRefresh = () => {
+    refetchSummary();
+    refetchTransactions();
+  };
+
+  const isLoading = summaryLoading || transactionsLoading;
+
+  if (isLoading && !summary && !transactions?.length) {
+    return (
+      <SafeAreaView style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#E11D48" />
+      </SafeAreaView>
+    );
+  }
+
+  const totalIn = summary?.totalIn ?? 0;
+  const totalOut = summary?.totalOut ?? 0;
+  const balance = summary?.balance ?? totalIn - totalOut;
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={onRefresh}
+            colors={["#E11D48"]}
+          />
+        }
+      >
         <Text style={styles.title}>Resumo Financeiro 📊</Text>
 
         <View style={styles.mainBalance}>
           <Text style={styles.balanceLabel}>Saldo em Caixa</Text>
-          <Text style={styles.balanceValue}>
-            R$ {(totalIn - totalOut).toFixed(2)}
-          </Text>
+          <Text style={styles.balanceValue}>R$ {Number(balance).toFixed(2)}</Text>
         </View>
 
         <View style={styles.statsRow}>
@@ -99,29 +123,36 @@ export default function AdminFinanceScreen() {
         </View>
 
         <Text style={styles.sectionTitle}>Transações Recentes</Text>
-        {mockTransactions.map((item) => (
-          <View key={item.id} style={styles.transactionCard}>
-            <View style={styles.transIcon}>
-              {item.type === "in" ? (
-                <ArrowUpRight color="#166534" size={20} />
-              ) : (
-                <ArrowDownRight color="#991b1b" size={20} />
-              )}
+        {transactions.length === 0 ? (
+          <Text style={styles.emptyText}>Nenhuma transação registrada.</Text>
+        ) : (
+          transactions.map((item: any) => (
+            <View key={item.id} style={styles.transactionCard}>
+              <View style={styles.transIcon}>
+                {item.type === "in" ? (
+                  <ArrowUpRight color="#166534" size={20} />
+                ) : (
+                  <ArrowDownRight color="#991b1b" size={20} />
+                )}
+              </View>
+              <View style={styles.transDetails}>
+                <Text style={styles.transDesc}>{item.description}</Text>
+                <Text style={styles.transDate}>
+                  {formatDate(item.createdAt || item.date)}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.transValue,
+                  { color: item.type === "in" ? "#166534" : "#991b1b" },
+                ]}
+              >
+                {item.type === "in" ? "+" : "-"} R${" "}
+                {Number(item.value).toFixed(2)}
+              </Text>
             </View>
-            <View style={styles.transDetails}>
-              <Text style={styles.transDesc}>{item.description}</Text>
-              <Text style={styles.transDate}>{item.date}</Text>
-            </View>
-            <Text
-              style={[
-                styles.transValue,
-                { color: item.type === "in" ? "#166534" : "#991b1b" },
-              ]}
-            >
-              {item.type === "in" ? "+" : "-"} R$ {item.value.toFixed(2)}
-            </Text>
-          </View>
-        ))}
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -129,6 +160,7 @@ export default function AdminFinanceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
+  centered: { justifyContent: "center", alignItems: "center" },
   scroll: { padding: 20 },
   title: {
     fontSize: 24,
@@ -180,6 +212,7 @@ const styles = StyleSheet.create({
     color: "#1e293b",
     marginBottom: 15,
   },
+  emptyText: { color: "#64748b", marginBottom: 20 },
   transactionCard: {
     backgroundColor: "#fff",
     padding: 15,

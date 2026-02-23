@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from "react-native";
@@ -18,6 +17,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 interface Message {
   id: string;
@@ -33,8 +36,8 @@ interface Message {
 }
 
 const MIPO_COLORS = {
-  primary: "#E11D48",
-  background: "#f8fafc",
+  primary: "#c73636",
+  background: "#faf6f1",
   text: "#1e293b",
   textLighter: "#64748b",
   border: "#e2e8f0",
@@ -89,10 +92,35 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [allMessages, setAllMessages] = useState<Message[]>([]);
+  const insets = useSafeAreaInsets();
 
   // WebSocket hook
-  const { joinChat, leaveChat, sendMessage, messages, isConnected } =
-    useWebSocketChat();
+  const {
+    joinChat,
+    leaveChat,
+    sendMessage,
+    messages,
+    isConnected,
+    markMessagesAsRead,
+  } = useWebSocketChat();
+
+  // Fetch chat details (to get members / other user)
+  const {
+    data: chatDetailsData,
+    isLoading: isChatLoading,
+    refetch: refetchChatDetails,
+  } = useQuery({
+    queryKey: ["chat", chatId],
+    queryFn: async () => {
+      const response = await api.get(`/chats/${chatId}`);
+      return response.data;
+    },
+    enabled: !!chatId,
+  });
+
+  const otherUser = chatDetailsData?.members?.find(
+    (m: any) => m.user.id !== user?.id,
+  )?.user;
 
   // Fetch initial messages
   const {
@@ -114,11 +142,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   useEffect(() => {
     const historyMessages = messagesData?.data || [];
     const wsMessages = messages.filter((m) => m.chatId === chatId);
-    
+
     // Remover duplicatas e combinar
     const messageIds = new Set(historyMessages.map((m: Message) => m.id));
     const newMessages = wsMessages.filter((m) => !messageIds.has(m.id));
-    
+
     setAllMessages([...historyMessages, ...newMessages]);
   }, [messagesData?.data, messages, chatId]);
 
@@ -126,6 +154,19 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   useEffect(() => {
     if (isConnected) {
       joinChat(chatId);
+
+      // marca mensagens como lidas via socket
+      try {
+        markMessagesAsRead?.(chatId);
+        // também chama o endpoint REST para garantir consistência se necessário
+        api.post(`/chats/${chatId}/mark-as-read`).catch(() => {});
+      } catch (err) {
+        // ignore
+      }
+
+      // força atualização da lista de chats (contadores de não lidos)
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+
       return () => {
         leaveChat(chatId);
       };
@@ -147,7 +188,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     setIsSending(true);
     sendMessage(chatId, messageText.trim());
     setMessageText("");
-    
+
     setTimeout(() => {
       setIsSending(false);
       flatListRef.current?.scrollToEnd({ animated: true });
@@ -165,25 +206,41 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           <ChevronLeft color={MIPO_COLORS.text} size={24} />
         </TouchableOpacity>
       ),
-      title: name,
+      title: otherUser?.nickname || name,
       headerRight: () => (
-        <View style={{ marginRight: 15, flexDirection: "row", gap: 12 }}>
+        <View
+          style={{
+            marginRight: 15,
+            flexDirection: "row",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
           {isConnected && (
             <View style={styles.connectionStatus}>
               <View style={styles.statusDot} />
             </View>
           )}
-          <TouchableOpacity
-            onPress={() => {
-              // Pode abrir detalhes do chat aqui
-            }}
-          >
-            <Info color={MIPO_COLORS.primary} size={24} />
-          </TouchableOpacity>
+          {otherUser && (
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("PlayerProfile", { userId: otherUser.id })
+              }
+            >
+              <Image
+                source={{
+                  uri:
+                    otherUser.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${otherUser.name}`,
+                }}
+                style={{ width: 36, height: 36, borderRadius: 18 }}
+              />
+            </TouchableOpacity>
+          )}
         </View>
       ),
     });
-  }, [navigation, name, isConnected]);
+  }, [navigation, name, isConnected, otherUser]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -212,7 +269,12 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         )}
 
         {/* Input de mensagem */}
-        <View style={styles.inputArea}>
+        <View
+          style={[
+            styles.inputArea,
+            { paddingBottom: (insets.bottom || 0) + 12 },
+          ]}
+        >
           <TextInput
             placeholder="Digite sua mensagem..."
             style={styles.input}
@@ -222,7 +284,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
             placeholderTextColor={MIPO_COLORS.textLighter}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (isSending || !messageText.trim() || !isConnected) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              (isSending || !messageText.trim() || !isConnected) &&
+                styles.sendBtnDisabled,
+            ]}
             onPress={handleSendMessage}
             disabled={isSending || !messageText.trim() || !isConnected}
           >
@@ -236,7 +302,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-}
 }
 
 const styles = StyleSheet.create({
@@ -307,6 +372,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: MIPO_COLORS.border,
     alignItems: "center",
+    paddingBottom: Platform.OS === "android" ? 28 : 12,
     gap: 8,
   },
   input: {
