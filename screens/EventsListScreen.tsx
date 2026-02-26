@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: "absolute",
-    bottom: 25,
+    bottom: 100,
     right: 25,
     backgroundColor: "#E11D48",
     width: 64,
