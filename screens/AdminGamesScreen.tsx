@@ -186,7 +186,7 @@ export default function AdminGamesScreen() {
   // UPLOADS
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], 
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.5,
@@ -196,7 +196,7 @@ export default function AdminGamesScreen() {
 
   const pickVideo = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["videos"], 
+      mediaTypes: ["videos"],
       quality: 0.5,
     });
     if (!result.canceled) setVideoUri(result.assets[0].uri);
@@ -227,11 +227,10 @@ export default function AdminGamesScreen() {
     try {
       setIsUploading(true);
 
-      // Só faz upload se a URI for um arquivo local do celular (começa com file://)
-      // Se já for Base64 (data:) ou link (http), mantemos como está.
       let finalImageUrl = imageUri;
       if (imageUri.startsWith("file://")) {
-        finalImageUrl = await uploadFile(imageUri, "/uploads/avatar");
+        // CORRIGIDO PARA CHAT-CONTENT PARA NÃO MISTURAR COM AVATARES
+        finalImageUrl = await uploadFile(imageUri, "/uploads/chat-content");
       }
 
       let finalVideoUrl = videoUri;
@@ -485,7 +484,6 @@ export default function AdminGamesScreen() {
                 </View>
 
                 <View style={styles.actionsRow}>
-                  {/* Destaque */}
                   <TouchableOpacity
                     onPress={() => toggleFeatureMutation.mutate(item.id)}
                     style={styles.actionIconBtn}
@@ -497,7 +495,6 @@ export default function AdminGamesScreen() {
                     />
                   </TouchableOpacity>
 
-                  {/* Editar */}
                   <TouchableOpacity
                     onPress={() => handleEditClick(item)}
                     style={styles.actionIconBtn}
@@ -505,7 +502,6 @@ export default function AdminGamesScreen() {
                     <Pencil color="#3b82f6" size={20} />
                   </TouchableOpacity>
 
-                  {/* Excluir */}
                   <TouchableOpacity
                     onPress={() => handleDeleteClick(item.id)}
                     style={[styles.actionIconBtn, { marginRight: 8 }]}
@@ -513,7 +509,6 @@ export default function AdminGamesScreen() {
                     <Trash color="#ef4444" size={20} />
                   </TouchableOpacity>
 
-                  {/* Ativo/Inativo */}
                   <View style={styles.actions}>
                     <Text
                       style={[

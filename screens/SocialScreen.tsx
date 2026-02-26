@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   FlatList,
   Image,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
   useColorScheme,
   Modal,
   TextInput,
   Alert,
+  Animated,
 } from "react-native";
 import {
   Heart,
@@ -25,6 +25,8 @@ import {
   UserPlus,
   AlertTriangle,
   Search,
+  Pencil,
+  Trash2,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
@@ -39,7 +41,6 @@ export default function SocialScreen({ navigation }: any) {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
-
   const { socket } = useWebSocketChat();
 
   const theme = {
@@ -54,13 +55,9 @@ export default function SocialScreen({ navigation }: any) {
 
   useEffect(() => {
     if (!socket) return;
-
-    const handleListUpdate = () => {
+    const handleListUpdate = () =>
       queryClient.invalidateQueries({ queryKey: ["chats"] });
-    };
-
     socket.on("chat:list-update", handleListUpdate);
-
     return () => {
       socket.off("chat:list-update", handleListUpdate);
     };
@@ -69,43 +66,69 @@ export default function SocialScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState("feed");
   const [createPostModal, setCreatePostModal] = useState(false);
   const [newChatModal, setNewChatModal] = useState(false);
-
-  // Buscar Amigos
   const [addFriendsModal, setAddFriendsModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Post Tela Cheia
   const [selectedPost, setSelectedPost] = useState<any>(null);
   const [commentText, setCommentText] = useState("");
-
-  // Criação de Post
   const [postContent, setPostContent] = useState("");
   const [postImage, setPostImage] = useState<string | null>(null);
   const [isCreatingPost, setIsCreatingPost] = useState(false);
-
-  // Denúncia
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [postToReport, setPostToReport] = useState<any>(null);
   const [reportReason, setReportReason] = useState("");
   const [reportImage, setReportImage] = useState<string | null>(null);
   const [isReporting, setIsReporting] = useState(false);
 
-  const { data: feedData, refetch: refetchFeed } = useQuery({
+  // ESTADO PARA EDIÇÃO
+  const [editingPost, setEditingPost] = useState<any>(null);
+
+  const fadeAnim = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0.4,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, [fadeAnim]);
+
+  const {
+    data: feedData,
+    refetch: refetchFeed,
+    isLoading: isLoadingFeed,
+  } = useQuery({
     queryKey: ["posts", "feed"],
     queryFn: async () => (await api.get("/posts/feed")).data,
   });
-  const { data: chatsData, refetch: refetchChats } = useQuery({
+
+  const {
+    data: chatsData,
+    refetch: refetchChats,
+    isLoading: isLoadingChats,
+  } = useQuery({
     queryKey: ["chats"],
     queryFn: async () => (await api.get("/chats")).data,
   });
+
   const { data: friendsData } = useQuery({
     queryKey: ["friends"],
     queryFn: async () => (await api.get("/friends")).data,
   });
+
   const { data: availableUsers } = useQuery({
     queryKey: ["friends", "available"],
     queryFn: async () => (await api.get("/friends/available/users")).data,
   });
+
   const { data: commentsData, refetch: refetchComments } = useQuery({
     queryKey: ["comments", selectedPost?.id],
     queryFn: async () =>
@@ -113,23 +136,61 @@ export default function SocialScreen({ navigation }: any) {
     enabled: !!selectedPost?.id,
   });
 
-  // MUTATIONS (Incluindo Delete Like correto)
+  const unreadChatsTotal =
+    chatsData?.data?.reduce(
+      (acc: number, c: any) => acc + (c.unreadCount > 0 ? 1 : 0),
+      0,
+    ) || 0;
+
+  // MUTATION PARA DELETAR POST
+  const deletePostMutation = useMutation({
+    mutationFn: (postId: string) => api.delete(`/posts/${postId}`),
+    onSuccess: () => {
+      Alert.alert("Sucesso", "Post removido.");
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+    onError: () => Alert.alert("Erro", "Não foi possível excluir o post."),
+  });
+
   const toggleLikeMutation = useMutation({
     mutationFn: (post: any) =>
       post.likedByUser
         ? api.delete(`/posts/${post.id}/like`)
         : api.post(`/posts/${post.id}/like`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts", "feed"] });
-      if (selectedPost) {
-        setSelectedPost({
-          ...selectedPost,
-          likedByUser: !selectedPost.likedByUser,
-          likeCount: selectedPost.likedByUser
-            ? selectedPost.likeCount - 1
-            : selectedPost.likeCount + 1,
-        });
+    onMutate: async (post) => {
+      await queryClient.cancelQueries({ queryKey: ["posts"] });
+      const previousFeed = queryClient.getQueryData(["posts", "feed"]);
+
+      queryClient.setQueryData(["posts", "feed"], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((p: any) =>
+            p.id === post.id
+              ? {
+                  ...p,
+                  likedByUser: !p.likedByUser,
+                  likeCount: p.likedByUser ? p.likeCount - 1 : p.likeCount + 1,
+                }
+              : p,
+          ),
+        };
+      });
+
+      if (selectedPost?.id === post.id) {
+        setSelectedPost((prev: any) => ({
+          ...prev,
+          likedByUser: !prev.likedByUser,
+          likeCount: prev.likedByUser ? prev.likeCount - 1 : prev.likeCount + 1,
+        }));
       }
+      return { previousFeed };
+    },
+    onError: (err, post, context) => {
+      queryClient.setQueryData(["posts", "feed"], context?.previousFeed);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
     },
   });
 
@@ -139,7 +200,7 @@ export default function SocialScreen({ navigation }: any) {
     onSuccess: () => {
       setCommentText("");
       refetchComments();
-      queryClient.invalidateQueries({ queryKey: ["posts", "feed"] });
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
     },
   });
 
@@ -175,7 +236,7 @@ export default function SocialScreen({ navigation }: any) {
         name: filename,
         type: match ? `image/${match[1]}` : "image/jpeg",
       });
-      const res = await api.post("/uploads/avatar", formData, {
+      const res = await api.post("/uploads/chat-content", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       return res.data.url;
@@ -187,21 +248,55 @@ export default function SocialScreen({ navigation }: any) {
   const handleCreatePost = async () => {
     if (!postContent.trim() && !postImage)
       return Alert.alert("Atenção", "Digite algo ou adicione foto.");
+
     setIsCreatingPost(true);
     let finalImage = postImage;
     if (postImage && postImage.startsWith("file://"))
       finalImage = await uploadImageAsync(postImage);
+
     try {
-      await api.post("/posts", { content: postContent, imageUrl: finalImage });
-      queryClient.invalidateQueries({ queryKey: ["posts", "feed"] });
+      if (editingPost) {
+        await api.patch(`/posts/${editingPost.id}`, {
+          content: postContent,
+          imageUrl: finalImage,
+        });
+        Alert.alert("Sucesso", "Post atualizado!");
+      } else {
+        await api.post("/posts", {
+          content: postContent,
+          imageUrl: finalImage,
+        });
+        Alert.alert("Sucesso", "Post criado!");
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
       setPostContent("");
       setPostImage(null);
+      setEditingPost(null);
       setCreatePostModal(false);
     } catch {
-      Alert.alert("Erro", "Falha ao postar");
+      Alert.alert("Erro", "Falha ao salvar post");
     } finally {
       setIsCreatingPost(false);
     }
+  };
+
+  const handleEditInit = (post: any) => {
+    setEditingPost(post);
+    setPostContent(post.content);
+    setPostImage(post.imageUrl);
+    setCreatePostModal(true);
+  };
+
+  const confirmDelete = (postId: string) => {
+    Alert.alert("Excluir", "Deseja remover este post permanentemente?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Excluir",
+        style: "destructive",
+        onPress: () => deletePostMutation.mutate(postId),
+      },
+    ]);
   };
 
   const handleReportPost = async () => {
@@ -258,7 +353,6 @@ export default function SocialScreen({ navigation }: any) {
           style={styles.tweetAvatar}
         />
       </TouchableOpacity>
-
       <View style={styles.tweetContentBox}>
         <View style={styles.tweetHeader}>
           <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
@@ -272,15 +366,33 @@ export default function SocialScreen({ navigation }: any) {
               @{item.user.nickname}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => {
-              setPostToReport(item);
-              setReportModalVisible(true);
-            }}
-          >
-            <AlertTriangle size={18} color={theme.textMuted} />
-          </TouchableOpacity>
+
+          <View style={{ flexDirection: "row", gap: 15, alignItems: "center" }}>
+            {/* BOTÕES DE EDIÇÃO/EXCLUSÃO APENAS PARA O DONO */}
+            {item.user.id === user?.id && (
+              <>
+                <TouchableOpacity onPress={() => handleEditInit(item)}>
+                  <Pencil size={18} color={theme.textMuted} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => confirmDelete(item.id)}>
+                  <Trash2 size={18} color={theme.danger} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {item.user.id !== user?.id && (
+              <TouchableOpacity
+                onPress={() => {
+                  setPostToReport(item);
+                  setReportModalVisible(true);
+                }}
+              >
+                <AlertTriangle size={18} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
+
         <Text style={[styles.tweetText, { color: theme.text }]}>
           {item.content}
         </Text>
@@ -331,9 +443,102 @@ export default function SocialScreen({ navigation }: any) {
     </View>
   );
 
+  const FeedSkeleton = () => (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        padding: 15,
+        borderBottomWidth: 1,
+        borderColor: theme.border,
+      }}
+    >
+      <View
+        style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}
+      >
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: theme.border,
+            marginRight: 10,
+          }}
+        />
+        <View>
+          <View
+            style={{
+              width: 120,
+              height: 16,
+              backgroundColor: theme.border,
+              borderRadius: 4,
+              marginBottom: 6,
+            }}
+          />
+          <View
+            style={{
+              width: 80,
+              height: 12,
+              backgroundColor: theme.border,
+              borderRadius: 4,
+            }}
+          />
+        </View>
+      </View>
+      <View
+        style={{
+          width: "100%",
+          height: 150,
+          backgroundColor: theme.border,
+          borderRadius: 16,
+        }}
+      />
+    </Animated.View>
+  );
+
+  const ChatSkeleton = () => (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        flexDirection: "row",
+        padding: 15,
+        borderBottomWidth: 1,
+        borderColor: theme.border,
+        alignItems: "center",
+      }}
+    >
+      <View
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: theme.border,
+          marginRight: 15,
+        }}
+      />
+      <View style={{ flex: 1 }}>
+        <View
+          style={{
+            width: 150,
+            height: 16,
+            backgroundColor: theme.border,
+            borderRadius: 4,
+            marginBottom: 8,
+          }}
+        />
+        <View
+          style={{
+            width: 100,
+            height: 12,
+            backgroundColor: theme.border,
+            borderRadius: 4,
+          }}
+        />
+      </View>
+    </Animated.View>
+  );
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* TABS */}
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <View
         style={[
           styles.topTabs,
@@ -365,17 +570,35 @@ export default function SocialScreen({ navigation }: any) {
           style={styles.tab}
           onPress={() => setActiveTab("chats")}
         >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "chats" && {
-                color: theme.primary,
-                fontWeight: "bold",
-              },
-            ]}
-          >
-            Conversas
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "chats" && {
+                  color: theme.primary,
+                  fontWeight: "bold",
+                },
+              ]}
+            >
+              Conversas
+            </Text>
+            {unreadChatsTotal > 0 && (
+              <View
+                style={{
+                  backgroundColor: theme.primary,
+                  borderRadius: 10,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text
+                  style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}
+                >
+                  {unreadChatsTotal}
+                </Text>
+              </View>
+            )}
+          </View>
           {activeTab === "chats" && (
             <View
               style={[styles.activeLine, { backgroundColor: theme.primary }]}
@@ -385,42 +608,44 @@ export default function SocialScreen({ navigation }: any) {
       </View>
 
       {activeTab === "feed" ? (
-        <FlatList
-          data={feedData?.data}
-          keyExtractor={(i) => i.id}
-          renderItem={renderPost}
-          refreshControl={
-            <RefreshControl refreshing={false} onRefresh={refetchFeed} />
-          }
-        />
+        isLoadingFeed ? (
+          <View>
+            <FeedSkeleton />
+            <FeedSkeleton />
+            <FeedSkeleton />
+          </View>
+        ) : (
+          <FlatList
+            data={feedData?.data}
+            keyExtractor={(i) => i.id}
+            renderItem={renderPost}
+            refreshControl={
+              <RefreshControl refreshing={false} onRefresh={refetchFeed} />
+            }
+          />
+        )
+      ) : isLoadingChats ? (
+        <View>
+          <ChatSkeleton />
+          <ChatSkeleton />
+          <ChatSkeleton />
+          <ChatSkeleton />
+        </View>
       ) : (
         <FlatList
           data={chatsData?.data}
           keyExtractor={(i) => i.id}
           renderItem={({ item }: any) => {
-            // 1. Identificar o tipo do chat
             const isPrivate = item.type === "PRIVATE";
-            const isEvent = item.type === "EVENT";
-            const isGroup = item.type === "GROUP";
-
-            // 2. Achar o outro usuário se for chat privado
             const otherMember = item.members?.find(
               (m: any) => m.userId !== user?.id,
             );
-
-            // 3. Definir Título e Avatar dinâmicos
             const title = isPrivate
               ? otherMember?.user?.nickname || otherMember?.user?.name
               : item.name;
-
             const avatar = isPrivate
               ? otherMember?.user?.avatarUrl
               : item.imageUrl;
-
-            // 4. Definir o ID alvo para navegação (Perfil, Evento ou Grupo)
-            const targetId = isPrivate
-              ? otherMember?.userId
-              : item.eventId || item.id;
 
             return (
               <TouchableOpacity
@@ -429,9 +654,9 @@ export default function SocialScreen({ navigation }: any) {
                   navigation.navigate("ChatDetail", {
                     chatId: item.id,
                     name: title,
-                    type: item.type, // Passando o tipo
-                    avatar: avatar, // Passando o avatar
-                    targetId: targetId, // Passando o ID alvo
+                    type: item.type,
+                    avatar,
+                    targetId: isPrivate ? otherMember?.userId : item.id,
                   })
                 }
               >
@@ -451,7 +676,7 @@ export default function SocialScreen({ navigation }: any) {
                       style={[styles.chatName, { color: theme.text }]}
                       numberOfLines={1}
                     >
-                      {title} {isEvent && "📅"} {isGroup && "👥"}
+                      {title}
                     </Text>
                     <Text
                       style={[
@@ -504,7 +729,6 @@ export default function SocialScreen({ navigation }: any) {
         />
       )}
 
-      {/* FABs */}
       <TouchableOpacity
         style={[
           styles.fab,
@@ -513,11 +737,14 @@ export default function SocialScreen({ navigation }: any) {
             bottom: activeTab === "chats" ? 90 : 20,
           },
         ]}
-        onPress={() =>
+        onPress={() => {
+          setEditingPost(null);
+          setPostContent("");
+          setPostImage(null);
           activeTab === "feed"
             ? setCreatePostModal(true)
-            : setAddFriendsModal(true)
-        }
+            : setAddFriendsModal(true);
+        }}
       >
         {activeTab === "feed" ? (
           <Plus color="#fff" size={24} />
@@ -543,195 +770,11 @@ export default function SocialScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-      {/* MODAL ADD AMIGOS */}
-      <Modal visible={addFriendsModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
-          <View
-            style={[
-              styles.modalHeader,
-              {
-                borderBottomColor: theme.border,
-                backgroundColor: theme.surface,
-              },
-            ]}
-          >
-            <TouchableOpacity onPress={() => setAddFriendsModal(false)}>
-              <X color={theme.text} size={24} />
-            </TouchableOpacity>
-            <Text
-              style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
-            >
-              Adicionar Amigos
-            </Text>
-            <View style={{ width: 24 }} />
-          </View>
-          <View
-            style={[
-              styles.searchContainer,
-              { backgroundColor: theme.surface, borderColor: theme.border },
-            ]}
-          >
-            <Search color={theme.textMuted} size={20} />
-            <TextInput
-              style={{ flex: 1, marginLeft: 10, color: theme.text }}
-              placeholder="Buscar @nickname ou nome"
-              placeholderTextColor={theme.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-          <FlatList
-            data={filteredUsers}
-            keyExtractor={(i) => i.id}
-            renderItem={({ item }: any) => (
-              <View
-                style={[styles.friendCard, { borderBottomColor: theme.border }]}
-              >
-                <Image
-                  source={{
-                    uri:
-                      item.avatarUrl ||
-                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`,
-                  }}
-                  style={styles.chatAvatar}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={{
-                      color: theme.text,
-                      fontWeight: "bold",
-                      fontSize: 16,
-                    }}
-                  >
-                    {item.name}
-                  </Text>
-                  <Text style={{ color: theme.textMuted }}>
-                    @{item.nickname}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.addBtnCircle,
-                    { backgroundColor: theme.primary },
-                  ]}
-                  onPress={() => sendFriendReqMutation.mutate(item.id)}
-                >
-                  <UserPlus color="#fff" size={18} />
-                </TouchableOpacity>
-              </View>
-            )}
-            ListEmptyComponent={
-              <Text
-                style={{
-                  textAlign: "center",
-                  marginTop: 20,
-                  color: theme.textMuted,
-                }}
-              >
-                Nenhum usuário encontrado.
-              </Text>
-            }
-          />
-        </SafeAreaView>
-      </Modal>
-
-      {/* MODAL DE DENÚNCIA */}
-      <Modal visible={reportModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.reportContainer,
-              {
-                backgroundColor: theme.surface,
-                paddingBottom: insets.bottom + 20,
-              },
-            ]}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                marginBottom: 15,
-              }}
-            >
-              <Text
-                style={{ fontSize: 18, fontWeight: "bold", color: theme.text }}
-              >
-                Denunciar Post
-              </Text>
-              <TouchableOpacity onPress={() => setReportModalVisible(false)}>
-                <X color={theme.text} size={24} />
-              </TouchableOpacity>
-            </View>
-            <Text style={{ color: theme.textMuted, marginBottom: 10 }}>
-              Descreva o motivo da denúncia para os administradores.
-            </Text>
-            <TextInput
-              style={[
-                styles.reportInput,
-                { color: theme.text, borderColor: theme.border },
-              ]}
-              placeholder="Assédio, spam, ofensa..."
-              placeholderTextColor={theme.textMuted}
-              value={reportReason}
-              onChangeText={setReportReason}
-              multiline
-            />
-            {reportImage && (
-              <Image
-                source={{ uri: reportImage }}
-                style={{
-                  width: "100%",
-                  height: 150,
-                  borderRadius: 8,
-                  marginTop: 10,
-                }}
-              />
-            )}
-            <TouchableOpacity
-              style={styles.addPhotoBtn}
-              onPress={async () => {
-                const res = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: ["images"],
-                  quality: 0.5,
-                });
-                if (!res.canceled) setReportImage(res.assets[0].uri);
-              }}
-            >
-              <Camera color={theme.primary} size={20} />
-              <Text
-                style={{
-                  color: theme.primary,
-                  marginLeft: 8,
-                  fontWeight: "bold",
-                }}
-              >
-                Anexar Print (Opcional)
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.submitReportBtn,
-                { backgroundColor: theme.danger },
-              ]}
-              onPress={handleReportPost}
-              disabled={isReporting}
-            >
-              {isReporting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  Enviar Denúncia
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL CRIAR POST */}
+      {/* MODAL CRIAR/EDITAR POST */}
       <Modal visible={createPostModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View
             style={[
               styles.modalHeader,
@@ -741,13 +784,18 @@ export default function SocialScreen({ navigation }: any) {
               },
             ]}
           >
-            <TouchableOpacity onPress={() => setCreatePostModal(false)}>
+            <TouchableOpacity
+              onPress={() => {
+                setCreatePostModal(false);
+                setEditingPost(null);
+              }}
+            >
               <X color={theme.text} size={24} />
             </TouchableOpacity>
             <Text
               style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
             >
-              Novo Post
+              {editingPost ? "Editar Post" : "Novo Post"}
             </Text>
             <TouchableOpacity
               onPress={handleCreatePost}
@@ -757,7 +805,7 @@ export default function SocialScreen({ navigation }: any) {
                 <ActivityIndicator color={theme.primary} />
               ) : (
                 <Text style={{ color: theme.primary, fontWeight: "bold" }}>
-                  Postar
+                  {editingPost ? "Salvar" : "Postar"}
                 </Text>
               )}
             </TouchableOpacity>
@@ -801,16 +849,18 @@ export default function SocialScreen({ navigation }: any) {
                   fontWeight: "bold",
                 }}
               >
-                Adicionar Foto
+                Mudar Foto
               </Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
       <Modal visible={!!selectedPost} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View
             style={[styles.modalHeader, { borderBottomColor: theme.border }]}
           >
@@ -822,7 +872,17 @@ export default function SocialScreen({ navigation }: any) {
             >
               Post
             </Text>
-            <View style={{ width: 24 }} />
+            {selectedPost?.user?.id === user?.id && (
+              <TouchableOpacity
+                onPress={() => {
+                  const p = selectedPost;
+                  setSelectedPost(null);
+                  handleEditInit(p);
+                }}
+              >
+                <Pencil size={20} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
           <FlatList
             data={commentsData?.data || []}
@@ -955,12 +1015,14 @@ export default function SocialScreen({ navigation }: any) {
               </Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
 
-      {/* MODAL NOVO CHAT */}
-      <Modal visible={newChatModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+      {/* MODAL ADD AMIGOS E NOVO CHAT (SKELETONS E COMPONENTES IGUAIS) */}
+      <Modal visible={addFriendsModal} animationType="slide">
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View
             style={[
               styles.modalHeader,
@@ -970,57 +1032,37 @@ export default function SocialScreen({ navigation }: any) {
               },
             ]}
           >
-            <TouchableOpacity onPress={() => setNewChatModal(false)}>
+            <TouchableOpacity onPress={() => setAddFriendsModal(false)}>
               <X color={theme.text} size={24} />
             </TouchableOpacity>
             <Text
               style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
             >
-              Nova Conversa
+              Adicionar Amigos
             </Text>
             <View style={{ width: 24 }} />
           </View>
-          <TouchableOpacity
-            style={[styles.newGroupBtn, { backgroundColor: theme.surface }]}
-            onPress={() => {
-              setNewChatModal(false);
-              navigation.navigate("CreateChatGroup");
-            }}
+          <View
+            style={[
+              styles.searchContainer,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
           >
-            <View
-              style={[styles.iconCircle, { backgroundColor: theme.primary }]}
-            >
-              <Users color="#fff" size={20} />
-            </View>
-            <Text
-              style={{ color: theme.text, fontSize: 16, fontWeight: "bold" }}
-            >
-              Novo Grupo
-            </Text>
-          </TouchableOpacity>
-          <Text
-            style={{
-              margin: 16,
-              fontSize: 14,
-              fontWeight: "bold",
-              color: theme.textMuted,
-            }}
-          >
-            Contatos no Mipo
-          </Text>
+            <Search color={theme.textMuted} size={20} />
+            <TextInput
+              style={{ flex: 1, marginLeft: 10, color: theme.text }}
+              placeholder="Buscar @nickname"
+              placeholderTextColor={theme.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
           <FlatList
-            data={friendsData?.data}
+            data={filteredUsers}
             keyExtractor={(i) => i.id}
             renderItem={({ item }: any) => (
-              <TouchableOpacity
-                style={[
-                  styles.friendCard,
-                  {
-                    borderBottomColor: theme.border,
-                    backgroundColor: theme.surface,
-                  },
-                ]}
-                onPress={() => createPrivateChatMutation.mutate(item.id)}
+              <View
+                style={[styles.friendCard, { borderBottomColor: theme.border }]}
               >
                 <Image
                   source={{
@@ -1030,15 +1072,35 @@ export default function SocialScreen({ navigation }: any) {
                   }}
                   style={styles.chatAvatar}
                 />
-                <Text style={[styles.chatName, { color: theme.text }]}>
-                  {item.nickname || item.name}
-                </Text>
-              </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      color: theme.text,
+                      fontWeight: "bold",
+                      fontSize: 16,
+                    }}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text style={{ color: theme.textMuted }}>
+                    @{item.nickname}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.addBtnCircle,
+                    { backgroundColor: theme.primary },
+                  ]}
+                  onPress={() => sendFriendReqMutation.mutate(item.id)}
+                >
+                  <UserPlus color="#fff" size={18} />
+                </TouchableOpacity>
+              </View>
             )}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1059,7 +1121,6 @@ const styles = StyleSheet.create({
     width: 60,
     borderRadius: 2,
   },
-
   tweetCard: {
     flexDirection: "row",
     padding: 15,
@@ -1086,7 +1147,6 @@ const styles = StyleSheet.create({
   tweetActions: { flexDirection: "row", justifyContent: "flex-start", gap: 40 },
   tweetActionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
   tweetActionText: { fontSize: 13 },
-
   chatAvatar: { width: 52, height: 52, borderRadius: 26, marginRight: 15 },
   chatInfo: {
     flex: 1,
@@ -1116,7 +1176,6 @@ const styles = StyleSheet.create({
   },
   unreadText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
   chatItem: { flexDirection: "row", paddingLeft: 15, alignItems: "center" },
-
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1139,7 +1198,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1156,7 +1214,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 15,
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1191,7 +1248,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
   },
-
   postFullHeader: { flexDirection: "row", alignItems: "center", padding: 12 },
   postAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
   postName: { fontWeight: "bold", fontSize: 14 },
@@ -1216,7 +1272,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   commentInput: { flex: 1, height: 40 },
-
   fab: {
     position: "absolute",
     right: 20,

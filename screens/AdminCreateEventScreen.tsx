@@ -30,7 +30,6 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
 
-  // Efeito para carregar os dados se estiver em modo de edição
   useEffect(() => {
     if (isEditing) {
       loadEventData();
@@ -40,12 +39,10 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
   const loadEventData = async () => {
     try {
       setLoading(true);
-      // Busca a lista de eventos para encontrar o específico
       const response = await api.get(`/events`);
       const event = response.data.find((e: any) => e.id === eventId);
 
       if (event) {
-        // Preenche os estados com os dados existentes para edição
         setTitle(event.title);
         setDescription(event.description);
         setLocalType(event.space);
@@ -68,6 +65,30 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
     if (selectedDate) setEventDate(selectedDate);
   };
 
+  // Função para subir a imagem para o storage
+  const uploadImageAsync = async (uri: string) => {
+    if (uri.startsWith("http")) return uri; // Se já é link do Supabase, não faz nada
+    try {
+      const formData = new FormData();
+      const filename = uri.split("/").pop() || `banner-${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      // @ts-ignore
+      formData.append("file", {
+        uri,
+        name: filename,
+        type: match ? `image/${match[1]}` : "image/jpeg",
+      });
+
+      // Enviando para chat-content para separar de avatares de usuários
+      const res = await api.post("/uploads/chat-content", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.url;
+    } catch {
+      return null;
+    }
+  };
+
   const handleSalvar = async () => {
     if (!title || !description) {
       return Alert.alert("Erro", "Preencha o nome e a descrição.");
@@ -75,13 +96,22 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
 
     setLoading(true);
     try {
+      let finalBannerUrl = banner;
+
+      // Se houver uma imagem nova do celular, faz upload antes de salvar
+      if (banner && banner.startsWith("file://")) {
+        finalBannerUrl = await uploadImageAsync(banner);
+        if (!finalBannerUrl)
+          throw new Error("Erro ao enviar a imagem do evento.");
+      }
+
       const payload = {
         title,
         description,
         space: localType,
         customLocation: localType === "PERSONALIZADO" ? customLocation : null,
         dateTime: eventDate.toISOString(),
-        bannerUrl: banner,
+        bannerUrl: finalBannerUrl,
       };
 
       if (isEditing) {
@@ -95,7 +125,7 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
     } catch (error: any) {
       Alert.alert(
         "Erro",
-        error.response?.data?.message || "Falha na operação.",
+        error.response?.data?.message || error.message || "Falha na operação.",
       );
     } finally {
       setLoading(false);

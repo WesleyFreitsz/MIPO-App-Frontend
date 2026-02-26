@@ -69,10 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Escuta notificações em tempo real
       socketInstance.on("notification:new", (data: any) => {
-        // Ignora a exibição de pop-up para mensagens de chat para não poluir a tela
         if (data.type === "CHAT_MESSAGE") return;
-
-        Alert.alert("Nova Notificação 🔔", data.message);
       });
 
       setSocket(socketInstance);

@@ -4,7 +4,11 @@ import { View, ActivityIndicator } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import {
   SafeAreaProvider,
@@ -18,6 +22,7 @@ import {
   MessageCircle,
   ShieldCheck,
 } from "lucide-react-native";
+import { api } from "./services/api";
 
 // Contexto
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -32,7 +37,6 @@ import SocialScreen from "./screens/SocialScreen";
 import ChatDetailScreen from "./screens/ChatDetailScreen";
 import EventsListScreen from "./screens/EventsListScreen";
 import CreateChatGroupScreen from "./screens/CreateChatGroupScreen";
-
 import PlayerProfileScreen from "./screens/PlayerProfileScreen";
 import GameDetailScreen from "./screens/GameDetailScreen";
 
@@ -47,7 +51,7 @@ import AdminAchievementsScreen from "./screens/AdminAchievementsScreen";
 import AdminCreateEventScreen from "./screens/AdminCreateEventScreen";
 import AdminSendNotificationScreen from "./screens/AdminSendNotificationScreen";
 import AdminEventsManagementScreen from "./screens/AdminEventsManagementScreen";
-import AdminReportsScreen from "./screens/AdminReportsScreen"; // <--- NOVA TELA IMPORTADA
+import AdminReportsScreen from "./screens/AdminReportsScreen";
 import GamesListScreen from "./screens/GameListScreen";
 
 const queryClient = new QueryClient();
@@ -66,6 +70,24 @@ const THEME = {
 function TabNavigator() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // Busca global para os Badges
+  const { data: chatsData } = useQuery({
+    queryKey: ["chats"],
+    queryFn: async () => (await api.get("/chats")).data,
+    refetchInterval: 5000,
+  });
+
+  const { data: notifsData } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () =>
+      (await api.get("/notifications", { params: { skip: 0, take: 50 } })).data,
+    refetchInterval: 5000,
+  });
+
+  const hasUnreadChats = chatsData?.data?.some((c: any) => c.unreadCount > 0);
+  const unreadNotifsCount =
+    notifsData?.data?.filter((n: any) => !n.isRead).length || 0;
 
   return (
     <Tab.Navigator
@@ -101,16 +123,6 @@ function TabNavigator() {
           headerShown: false,
         }}
       />
-      {/* <Tab.Screen
-        name="Salas"
-        component={RoomsScreen}
-        options={{
-          tabBarIcon: ({ color }) => <DoorOpen color={color} size={22} />,
-          headerShown: false,
-        }}
-      /> */}
-
-      {/* ABA EXCLUSIVA DO ADMIN NO TAB BAR */}
       {user?.role === "ADMIN" && (
         <Tab.Screen
           name="Painel"
@@ -121,19 +133,36 @@ function TabNavigator() {
           }}
         />
       )}
-
       <Tab.Screen
         name="Social"
         component={SocialScreen}
         options={{
           tabBarIcon: ({ color }) => <MessageCircle color={color} size={22} />,
+          tabBarBadge: hasUnreadChats ? "" : undefined, // String vazia mostra só uma bolinha
+          tabBarBadgeStyle: {
+            minWidth: 10,
+            maxHeight: 10,
+            borderRadius: 5,
+            backgroundColor: THEME.primary,
+          },
         }}
       />
+
+      {/* <Tab.Screen
+        name="Salas"
+        component={RoomsScreen}
+        options={{
+          tabBarIcon: ({ color }) => <DoorOpen color={color} size={22} />,
+          headerShown: false,
+        }}
+      /> */}
       <Tab.Screen
-        name="Alertas"
+        name="Notificações"
         component={NotificationsScreen}
         options={{
           tabBarIcon: ({ color }) => <Bell color={color} size={22} />,
+          tabBarBadge: unreadNotifsCount > 0 ? unreadNotifsCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: THEME.primary },
         }}
       />
       <Tab.Screen
@@ -184,14 +213,11 @@ function Routes() {
         cardStyle: { backgroundColor: THEME.background },
       }}
     >
-      {/* A navegação base agora é o TabNavigator para todos */}
       <Stack.Screen
         name="MainTabs"
         component={TabNavigator}
         options={{ headerShown: false }}
       />
-
-      {/* ROTAS COMPARTILHADAS E DE ADMIN (STACK) */}
       <Stack.Screen
         name="ChatDetail"
         component={ChatDetailScreen}
@@ -202,7 +228,6 @@ function Routes() {
         component={CreateChatGroupScreen}
         options={{ headerShown: false }}
       />
-
       <Stack.Screen
         name="PlayerProfile"
         component={PlayerProfileScreen}
@@ -213,15 +238,11 @@ function Routes() {
         component={EventsListScreen}
         options={{ title: "Eventos" }}
       />
-
-      {/* GERENCIAMENTO DE EVENTOS (NOVA TELA) */}
       <Stack.Screen
         name="AdminEventsManagement"
         component={AdminEventsManagementScreen}
         options={{ title: "Gerenciar Eventos" }}
       />
-
-      {/* CRIAÇÃO/EDIÇÃO DE EVENTO (USADA POR AMBOS) */}
       <Stack.Screen
         name="AdminCreateEvent"
         component={AdminCreateEventScreen}
@@ -229,8 +250,6 @@ function Routes() {
           title: user?.role === "ADMIN" ? "Evento Oficial" : "Solicitar Evento",
         }}
       />
-
-      {/* DEMAIS TELAS ADMIN */}
       <Stack.Screen
         name="AdminUsers"
         component={AdminUsersScreen}
@@ -266,14 +285,11 @@ function Routes() {
         component={AdminSendNotificationScreen}
         options={{ title: "Notificações" }}
       />
-
-      {/* REGISTRO DA TELA DE DENÚNCIAS */}
       <Stack.Screen
         name="AdminReports"
         component={AdminReportsScreen}
-        options={{ headerShown: false }} // O header já é customizado dentro da tela
+        options={{ headerShown: false }}
       />
-
       <Stack.Screen
         name="GamesList"
         component={GamesListScreen}

@@ -8,7 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,36 +18,38 @@ export default function ChatsListScreen({ navigation }: any) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-
   const { socket } = useWebSocketChat();
 
-  // 👇 ATUALIZAÇÃO DA LISTA DE CHATS VIA WEBSOCKET 👇
   useEffect(() => {
     if (!socket) return;
-
     const handleListUpdate = () => {
       queryClient.invalidateQueries({ queryKey: ["chats"] });
     };
-
     socket.on("chat:list-update", handleListUpdate);
-
     return () => {
       socket.off("chat:list-update", handleListUpdate);
     };
   }, [socket, queryClient]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["chats"],
-    queryFn: async () => {
-      const res = await api.get("/chats", { params: { skip: 0, take: 50 } });
-      return res.data;
-    },
-  });
+  // 👇 USO DE PAGINAÇÃO INFINITA (10 chats por vez) 👇
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ["chats"],
+      queryFn: async ({ pageParam = 0 }) => {
+        const res = await api.get("/chats", {
+          params: { skip: pageParam, take: 10 },
+        });
+        return res.data;
+      },
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) =>
+        lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+    });
 
-  const chats = data?.data || [];
+  // Junta todas as páginas carregadas em um único array
+  const chats = data?.pages.flatMap((page) => page.data) || [];
 
   const renderItem = ({ item }: any) => {
-    // Para chats privados, encontrar o outro usuário
     const otherMember = item.members?.find((m: any) => m.userId !== user?.id);
     const title =
       item.type === "PRIVATE"
@@ -59,6 +61,7 @@ export default function ChatsListScreen({ navigation }: any) {
           `https://api.dicebear.com/7.x/initials/svg?seed=${title}`
         : item.imageUrl ||
           `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`;
+
     const lastMsgText = item.lastMessage
       ? `${item.lastMessage.user?.nickname || item.lastMessage.user?.name}: ${item.lastMessage.content}`
       : item.lastMessage?.content || "";
@@ -80,16 +83,11 @@ export default function ChatsListScreen({ navigation }: any) {
                 : ""}
             </Text>
           </View>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
+          <View style={styles.msgRow}>
             <Text style={styles.lastMsg} numberOfLines={1}>
               {lastMsgText}
             </Text>
+            {/* 👇 BOLINHA VERMELHA ATIVA 👇 */}
             {item.unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>{item.unreadCount}</Text>
@@ -103,14 +101,7 @@ export default function ChatsListScreen({ navigation }: any) {
 
   if (isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          paddingTop: insets.top,
-        }}
-      >
+      <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" />
       </View>
     );
@@ -122,6 +113,15 @@ export default function ChatsListScreen({ navigation }: any) {
         data={chats}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        onEndReached={() => {
+          if (hasNextPage) fetchNextPage();
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <ActivityIndicator style={{ margin: 20 }} />
+          ) : null
+        }
         ListEmptyComponent={() => (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>Nenhuma conversa ainda.</Text>
@@ -134,6 +134,7 @@ export default function ChatsListScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   chatItem: {
     flexDirection: "row",
     padding: 16,
@@ -155,6 +156,11 @@ const styles = StyleSheet.create({
   },
   name: { fontWeight: "bold", fontSize: 16, color: "#1e293b" },
   time: { fontSize: 12, color: "#94a3b8" },
+  msgRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   lastMsg: { fontSize: 14, color: "#64748b", flex: 1 },
   empty: {
     flex: 1,

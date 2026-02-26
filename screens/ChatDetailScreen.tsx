@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   Platform,
   ImageBackground,
   useColorScheme,
-  SafeAreaView,
   Image,
   Modal,
   Alert,
@@ -32,7 +31,12 @@ import {
   Camera,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+  useQuery,
+} from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
@@ -93,13 +97,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const { chatId, name, type, avatar, targetId } = route.params;
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const flatListRef = useRef<FlatList>(null);
   const [messageText, setMessageText] = useState("");
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
 
-  // ESTADOS DO MODAL DE GRUPO & EDIÇÃO
   const [groupInfoModal, setGroupInfoModal] = useState(false);
   const [addMemberModal, setAddMemberModal] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
@@ -107,8 +109,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editImage, setEditImage] = useState<string | null>(null);
-
-  // ESTADOS DO MODAL DE EVENTO
   const [eventModalVisible, setEventModalVisible] = useState(false);
   const [eventData, setEventData] = useState<any>(null);
 
@@ -127,14 +127,34 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const { joinChat, leaveChat, sendMessage, messages, isConnected } =
     useWebSocketChat();
 
-  const { data: messagesData } = useQuery({
-    queryKey: ["chat", chatId, "messages"],
-    queryFn: async () =>
-      (
-        await api.get(`/chats/${chatId}/messages`, {
-          params: { skip: 0, take: 50 },
+  // CORREÇÃO: Usando a rota POST para marcar como lida
+  useEffect(() => {
+    if (chatId) {
+      api
+        .post(`/chats/${chatId}/mark-as-read`)
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["chats"] });
         })
-      ).data,
+        .catch(() => {});
+    }
+  }, [chatId, queryClient]);
+
+  const {
+    data: messagesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["chat", chatId, "messages"],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await api.get(`/chats/${chatId}/messages`, {
+        params: { skip: pageParam, take: 15 },
+      });
+      return res.data;
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
   });
 
   const { data: chatDetails, refetch: refetchChatDetails } = useQuery({
@@ -151,9 +171,14 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   });
 
   const allMessages = [
-    ...(messagesData?.data || []),
     ...messages.filter((m) => m.chatId === chatId),
-  ].filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
+    ...(messagesData?.pages.flatMap((p) => p.data) || []),
+  ]
+    .filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
   useEffect(() => {
     if (isConnected && chatId) joinChat(chatId);
@@ -162,7 +187,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     };
   }, [chatId, isConnected]);
 
-  // Sincronizar dados de edição quando abrir o modal de detalhes do grupo
   useEffect(() => {
     if (groupInfoModal && chatDetails) {
       setEditName(chatDetails.name || name);
@@ -172,12 +196,13 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     }
   }, [groupInfoModal, chatDetails]);
 
-  // HEADER ESTILO WHATSAPP COM NAVEGAÇÃO INTEGRADA
   React.useLayoutEffect(() => {
-    let headerSubtitle = "Ver perfil";
-    if (type === "GROUP") headerSubtitle = "Toque para dados do grupo";
-    if (type === "EVENT") headerSubtitle = "Toque para detalhes do evento";
-
+    let headerSubtitle =
+      type === "GROUP"
+        ? "Toque para dados do grupo"
+        : type === "EVENT"
+          ? "Toque para detalhes do evento"
+          : "Ver perfil";
     navigation.setOptions({
       headerTitle: () => (
         <TouchableOpacity
@@ -185,29 +210,26 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           onPress={() => {
             if (type === "PRIVATE" && targetId) {
               navigation.navigate("PlayerProfile", { userId: targetId });
-            } else if (type === "EVENT") {
-              if (chatId) {
-                // Busca os dados do evento pelo ID do chat
-                api
-                  .get("/events")
-                  .then((res) => {
-                    const eventoEncontrado = res.data.find(
-                      (e: any) => e.chatId === chatId,
-                    );
-                    if (eventoEncontrado) {
-                      setEventData(eventoEncontrado);
-                      setEventModalVisible(true);
-                    } else {
-                      Alert.alert(
-                        "Aviso",
-                        "Este evento não foi encontrado ou já foi encerrado.",
-                      );
-                    }
-                  })
-                  .catch(() =>
-                    Alert.alert("Erro", "Não foi possível carregar o evento."),
+            } else if (type === "EVENT" && chatId) {
+              api
+                .get("/events")
+                .then((res) => {
+                  const eventoEncontrado = res.data.find(
+                    (e: any) => e.chatId === chatId,
                   );
-              }
+                  if (eventoEncontrado) {
+                    setEventData(eventoEncontrado);
+                    setEventModalVisible(true);
+                  } else {
+                    Alert.alert(
+                      "Aviso",
+                      "Este evento não foi encontrado ou já foi encerrado.",
+                    );
+                  }
+                })
+                .catch(() =>
+                  Alert.alert("Erro", "Não foi possível carregar o evento."),
+                );
             } else if (type === "GROUP") {
               setGroupInfoModal(true);
             }
@@ -240,44 +262,33 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     if (!messageText.trim() || !chatId) return;
     sendMessage(chatId, messageText.trim());
     setMessageText("");
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  // Funções de Gerenciamento de Membros
   const removeMemberMutation = useMutation({
     mutationFn: (memberId: string) =>
       api.delete(`/chats/${chatId}/members/${memberId}`),
     onSuccess: () => refetchChatDetails(),
   });
-
   const confirmRemoveMember = (memberId: string, memberName: string) => {
-    Alert.alert(
-      "Confirmação",
-      `Tem certeza que deseja remover ${memberName} do grupo?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: () => removeMemberMutation.mutate(memberId),
-        },
-      ],
-    );
+    Alert.alert("Confirmação", `Remover ${memberName} do grupo?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: () => removeMemberMutation.mutate(memberId),
+      },
+    ]);
   };
-
   const addMembersMutation = useMutation({
     mutationFn: (memberIds: string[]) =>
       api.post(`/chats/${chatId}/members`, { memberIds }),
     onSuccess: () => {
-      Alert.alert("Sucesso", "Membros adicionados!");
+      Alert.alert("Sucesso", "Adicionados!");
       setAddMemberModal(false);
       setSelectedFriends([]);
       refetchChatDetails();
     },
-    onError: () =>
-      Alert.alert("Erro", "Não foi possível adicionar os membros."),
   });
-
   const leaveChatMutation = useMutation({
     mutationFn: () => api.post(`/chats/${chatId}/leave`),
     onSuccess: () => {
@@ -286,8 +297,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       queryClient.invalidateQueries({ queryKey: ["chats"] });
     },
   });
-
-  // Funções de Atualização de Grupo
   const uploadImageAsync = async (uri: string) => {
     try {
       const formData = new FormData();
@@ -307,7 +316,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       return null;
     }
   };
-
   const updateGroupMutation = useMutation({
     mutationFn: async () => {
       let finalImageUrl = chatDetails?.imageUrl;
@@ -325,10 +333,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       refetchChatDetails();
       queryClient.invalidateQueries({ queryKey: ["chats"] });
     },
-    onError: () =>
-      Alert.alert("Erro", "Não foi possível salvar as alterações."),
   });
-
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
@@ -342,7 +347,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const amIAdmin = chatDetails?.members?.some(
     (m: any) => m.userId === user?.id && m.role === "ADMIN",
   );
-
   const friendsNotInGroup =
     friendsData?.data?.filter(
       (friend: any) =>
@@ -350,10 +354,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           (member: any) => member.userId === friend.id,
         ),
     ) || [];
-
-  // CORREÇÃO AQUI: React Query v5 usa apenas isPending
   const isLoadingAdd = addMembersMutation.isPending;
-
   const getTime = (dateIso: string) =>
     new Date(dateIso).toLocaleTimeString("pt-BR", {
       hour: "2-digit",
@@ -361,11 +362,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <ImageBackground
           source={{ uri: isDark ? WA_BG_DARK : WA_BG_LIGHT }}
@@ -373,7 +374,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           imageStyle={{ opacity: isDark ? 0.2 : 0.6 }}
         >
           <FlatList
-            ref={flatListRef}
+            inverted
             data={allMessages}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
@@ -384,8 +385,14 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                 theme={theme}
               />
             )}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: false })
+            onEndReached={() => {
+              if (hasNextPage) fetchNextPage();
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <ActivityIndicator style={{ margin: 20 }} />
+              ) : null
             }
           />
         </ImageBackground>
@@ -393,7 +400,10 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         <View
           style={[
             styles.inputContainer,
-            { backgroundColor: theme.bg, paddingBottom: insets.bottom + 8 },
+            {
+              backgroundColor: theme.bg,
+              paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 15,
+            },
           ]}
         >
           <View
@@ -420,11 +430,10 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         </View>
       </KeyboardAvoidingView>
 
-      {/* =========================================================
-          MODAL DETALHES DO GRUPO (Com opções de edição e lixeira)
-      ========================================================= */}
       <Modal visible={groupInfoModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View style={styles.modalHeader}>
             <TouchableOpacity
               onPress={() => {
@@ -443,14 +452,12 @@ export default function ChatDetailScreen({ route, navigation }: any) {
             >
               Dados do Grupo
             </Text>
-
             {amIAdmin && !isEditingGroup ? (
               <TouchableOpacity onPress={() => setIsEditingGroup(true)}>
                 <Edit2 color={theme.textOther} size={20} />
               </TouchableOpacity>
             ) : isEditingGroup ? (
               <TouchableOpacity onPress={() => updateGroupMutation.mutate()}>
-                {/* CORREÇÃO AQUI: Apenas isPending para React Query v5 */}
                 {updateGroupMutation.isPending ? (
                   <ActivityIndicator color={theme.senderColor} />
                 ) : (
@@ -551,7 +558,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
               >
                 Integrantes ({chatDetails?.members?.length || 0})
               </Text>
-
               {amIAdmin && (
                 <TouchableOpacity
                   style={styles.addMemberRow}
@@ -576,7 +582,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                   </Text>
                 </TouchableOpacity>
               )}
-
               {chatDetails?.members?.map((item: any) => (
                 <View key={item.id} style={styles.memberRow}>
                   <Image
@@ -620,7 +625,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                   )}
                 </View>
               ))}
-
               <TouchableOpacity
                 style={styles.leaveGroupBtn}
                 onPress={() => leaveChatMutation.mutate()}
@@ -634,14 +638,13 @@ export default function ChatDetailScreen({ route, navigation }: any) {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
-      {/* =========================================================
-          MODAL ADICIONAR MEMBROS AO GRUPO
-      ========================================================= */}
       <Modal visible={addMemberModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setAddMemberModal(false)}>
               <X color={theme.textOther} size={24} />
@@ -741,12 +744,9 @@ export default function ChatDetailScreen({ route, navigation }: any) {
               );
             }}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
 
-      {/* =========================================================
-          MODAL DETALHES DO EVENTO
-      ========================================================= */}
       <Modal visible={eventModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.eventModalContent}>
@@ -790,7 +790,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                 >
                   {eventData?.title}
                 </Text>
-
                 <View
                   style={{
                     flexDirection: "row",
@@ -807,7 +806,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                     às {eventData && getTime(eventData.dateTime)}
                   </Text>
                 </View>
-
                 <View
                   style={{
                     flexDirection: "row",
@@ -824,7 +822,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                       : eventData?.space}
                   </Text>
                 </View>
-
                 <Text
                   style={{
                     fontSize: 18,
@@ -841,7 +838,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                 >
                   {eventData?.description}
                 </Text>
-
                 <Text
                   style={{
                     fontSize: 18,
@@ -918,13 +914,13 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   bgImage: { flex: 1 },
-  listContent: { padding: 10, paddingBottom: 20 },
+  listContent: { padding: 10, paddingTop: 20 },
   headerAvatar: {
     width: 36,
     height: 36,
@@ -1010,8 +1006,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(239, 68, 68, 0.1)",
     borderRadius: 12,
   },
-
-  // Edição
   inputLabel: {
     alignSelf: "flex-start",
     fontSize: 14,
@@ -1038,8 +1032,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-
-  // Estilos do Modal de Evento Embutido
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

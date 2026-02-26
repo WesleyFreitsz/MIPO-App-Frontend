@@ -10,11 +10,11 @@ import {
   Image,
   ActivityIndicator,
   SafeAreaView,
+  useColorScheme,
 } from "react-native";
 import {
   Bell,
   Calendar,
-  DoorOpen,
   Info,
   Check,
   ShieldAlert,
@@ -24,44 +24,26 @@ import {
 import { api } from "../services/api";
 import { useFocusEffect } from "@react-navigation/native";
 import { usePushNotifications } from "../services/usePushNotifications";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import {
+  useQueryClient,
+  useMutation,
+  useInfiniteQuery,
+} from "@tanstack/react-query";
 
-const MIPO_COLORS = {
-  primary: "#E11D48",
-  background: "#f8fafc",
-  text: "#1e293b",
-  textLighter: "#64748b",
-  border: "#e2e8f0",
-  white: "#ffffff",
-  success: "#10b981",
-};
-
-interface FriendRequest {
-  id: string;
-  fromUserId: string;
-  fromUser?: {
-    id: string;
-    name: string;
-    nickname: string;
-    avatarUrl: string;
-    city: string;
-  };
-  status: string;
-  createdAt: string;
-}
-
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  icon: string;
-  isRead: boolean;
-  createdAt: string;
-}
-
-const FriendRequestCard = ({ request, onAccept, onReject, isLoading }: any) => {
+const FriendRequestCard = ({
+  request,
+  onAccept,
+  onReject,
+  isLoading,
+  theme,
+}: any) => {
   return (
-    <View style={styles.friendRequestCard}>
+    <View
+      style={[
+        styles.friendRequestCard,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+    >
       <Image
         source={{
           uri:
@@ -71,11 +53,13 @@ const FriendRequestCard = ({ request, onAccept, onReject, isLoading }: any) => {
         style={styles.friendAvatar}
       />
       <View style={styles.friendInfo}>
-        <Text style={styles.friendName}>
+        <Text style={[styles.friendName, { color: theme.text }]}>
           {request.fromUser?.nickname || request.fromUser?.name}
         </Text>
-        <Text style={styles.friendCity}>{request.fromUser?.city}</Text>
-        <Text style={styles.requestTime}>
+        <Text style={[styles.friendCity, { color: theme.textLighter }]}>
+          {request.fromUser?.city}
+        </Text>
+        <Text style={[styles.requestTime, { color: theme.textLighter }]}>
           há{" "}
           {Math.floor(
             (Date.now() - new Date(request.createdAt).getTime()) / (1000 * 60),
@@ -85,29 +69,29 @@ const FriendRequestCard = ({ request, onAccept, onReject, isLoading }: any) => {
       </View>
       <View style={styles.friendActions}>
         <TouchableOpacity
-          style={styles.acceptBtn}
+          style={[styles.acceptBtn, { backgroundColor: theme.success }]}
           onPress={() => onAccept(request.id)}
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator color={MIPO_COLORS.white} size="small" />
+            <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Check color={MIPO_COLORS.white} size={18} />
+            <Check color="#fff" size={18} />
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.rejectBtn}
+          style={[styles.rejectBtn, { backgroundColor: theme.border }]}
           onPress={() => onReject(request.id)}
           disabled={isLoading}
         >
-          <X color={MIPO_COLORS.textLighter} size={18} />
+          <X color={theme.textLighter} size={18} />
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-const NotificationCard = ({ notification }: any) => {
+const NotificationCard = ({ notification, theme }: any) => {
   const getIcon = (iconName: string) => {
     switch (iconName) {
       case "calendar":
@@ -124,48 +108,114 @@ const NotificationCard = ({ notification }: any) => {
   };
 
   return (
-    <View style={[styles.notifCard, !notification.isRead && styles.unreadCard]}>
-      <View style={styles.iconContainer}>{getIcon(notification.icon)}</View>
+    <View
+      style={[
+        styles.notifCard,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+        !notification.isRead && {
+          borderLeftWidth: 4,
+          borderLeftColor: theme.primary,
+          backgroundColor: theme.unreadBg,
+        },
+      ]}
+    >
+      <View style={[styles.iconContainer, { backgroundColor: theme.bg }]}>
+        {getIcon(notification.icon)}
+      </View>
       <View style={styles.content}>
         <View style={styles.headerRow}>
-          <Text style={styles.notifTitle}>{notification.title}</Text>
-          <Text style={styles.notifTime}>
+          <Text style={[styles.notifTitle, { color: theme.text }]}>
+            {notification.title}
+          </Text>
+          <Text style={[styles.notifTime, { color: theme.textLighter }]}>
             {new Date(notification.createdAt).toLocaleDateString()}
           </Text>
         </View>
-        <Text style={styles.notifMessage}>{notification.message}</Text>
+        <Text style={[styles.notifMessage, { color: theme.textLighter }]}>
+          {notification.message}
+        </Text>
       </View>
     </View>
   );
 };
 
 export default function NotificationsScreen() {
-  const [friendRequests, setFriendRequests] = React.useState<FriendRequest[]>(
-    [],
-  );
-  const [notifications, setNotifications] = React.useState<Notification[]>([]);
-  const [refreshing, setRefreshing] = React.useState(false);
   const [activeTab, setActiveTab] = useState("requests");
   const queryClient = useQueryClient();
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
+
+  const theme = {
+    bg: isDark ? "#000000" : "#faf6f1",
+    surface: isDark ? "#121212" : "#ffffff",
+    text: isDark ? "#ffffff" : "#1c1917",
+    textLighter: isDark ? "#a1a1aa" : "#78716c",
+    border: isDark ? "#27272a" : "#e7e5e4",
+    primary: "#c73636",
+    success: "#10b981",
+    unreadBg: isDark ? "#2a1215" : "#fff5f5",
+  };
 
   const { requestPermission } = usePushNotifications();
 
   useEffect(() => {
-    const checkPermission = async () => {
-      await requestPermission();
-    };
-    checkPermission();
-  }, []);
+    requestPermission();
+    // Marcar lidas ao abrir a aba
+    if (activeTab === "notifications") {
+      api.patch("/notifications/read-all").catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    }
+  }, [activeTab]);
+
+  // INFINITE QUERIES
+  const {
+    data: reqsData,
+    fetchNextPage: fetchNextReqs,
+    hasNextPage: hasNextReqs,
+    refetch: refetchReqs,
+    isFetching: isFetchingReqs,
+  } = useInfiniteQuery({
+    queryKey: ["friendRequests"],
+    queryFn: async ({ pageParam = 0 }) =>
+      (
+        await api.get("/friends/requests/pending", {
+          params: { skip: pageParam, take: 20 },
+        })
+      ).data,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+  });
+
+  const {
+    data: notifsData,
+    fetchNextPage: fetchNextNotifs,
+    hasNextPage: hasNextNotifs,
+    refetch: refetchNotifs,
+    isFetching: isFetchingNotifs,
+  } = useInfiniteQuery({
+    queryKey: ["notifications", "infinite"],
+    queryFn: async ({ pageParam = 0 }) =>
+      (
+        await api.get("/notifications", {
+          params: { skip: pageParam, take: 20 },
+        })
+      ).data,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+  });
+
+  const friendRequests = reqsData?.pages.flatMap((p) => p.data) || [];
+  const notifications = notifsData?.pages.flatMap((p) => p.data) || [];
 
   const acceptFriendRequestMutation = useMutation({
     mutationFn: (friendshipId: string) =>
       api.post(`/friends/${friendshipId}/accept`),
     onSuccess: () => {
-      fetchFriendRequests();
+      refetchReqs();
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
       Alert.alert("Sucesso", "Solicitação aceita!");
-    },
-    onError: () => {
-      Alert.alert("Erro", "Erro ao aceitar solicitação");
     },
   });
 
@@ -173,86 +223,51 @@ export default function NotificationsScreen() {
     mutationFn: (friendshipId: string) =>
       api.delete(`/friends/${friendshipId}/reject`),
     onSuccess: () => {
-      fetchFriendRequests();
-      Alert.alert("Sucesso", "Solicitação rejeitada");
-    },
-    onError: () => {
-      Alert.alert("Erro", "Erro ao rejeitar solicitação");
+      refetchReqs();
     },
   });
 
-  const fetchFriendRequests = async () => {
-    try {
-      const response = await api.get("/friends/requests/pending", {
-        params: { skip: 0, take: 50 },
-      });
-      setFriendRequests(response.data.data);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      const response = await api.get("/notifications");
-      setNotifications(response.data);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchFriendRequests();
-      fetchNotifications();
-    }, []),
-  );
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchFriendRequests(), fetchNotifications()]);
-    setRefreshing(false);
-  };
-
-  const handleAcceptRequest = (friendshipId: string) => {
-    acceptFriendRequestMutation.mutate(friendshipId);
-  };
-
-  const handleRejectRequest = (friendshipId: string) => {
-    Alert.alert("Confirmar", "Deseja rejeitar essa solicitação?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Rejeitar",
-        onPress: () => rejectFriendRequestMutation.mutate(friendshipId),
-        style: "destructive",
-      },
-    ]);
+  const onRefresh = () => {
+    refetchReqs();
+    refetchNotifs();
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Notificações</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: theme.surface, borderBottomColor: theme.border },
+        ]}
+      >
+        <Text style={[styles.title, { color: theme.text }]}>Notificações</Text>
       </View>
 
-      {/* ABAS */}
-      <View style={styles.tabContainer}>
+      <View
+        style={[
+          styles.tabContainer,
+          { backgroundColor: theme.surface, borderBottomColor: theme.border },
+        ]}
+      >
         <TouchableOpacity
-          style={[styles.tab, activeTab === "requests" && styles.tabActive]}
+          style={[
+            styles.tab,
+            activeTab === "requests" && { borderBottomColor: theme.primary },
+          ]}
           onPress={() => setActiveTab("requests")}
         >
           <UserPlus
-            color={
-              activeTab === "requests"
-                ? MIPO_COLORS.primary
-                : MIPO_COLORS.textLighter
-            }
+            color={activeTab === "requests" ? theme.primary : theme.textLighter}
             size={18}
           />
           <Text
             style={[
               styles.tabText,
-              activeTab === "requests" && styles.tabTextActive,
+              { color: theme.textLighter },
+              activeTab === "requests" && {
+                color: theme.primary,
+                fontWeight: "600",
+              },
             ]}
           >
             Solicitações ({friendRequests.length})
@@ -262,50 +277,59 @@ export default function NotificationsScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            activeTab === "notifications" && styles.tabActive,
+            activeTab === "notifications" && {
+              borderBottomColor: theme.primary,
+            },
           ]}
           onPress={() => setActiveTab("notifications")}
         >
           <Bell
             color={
-              activeTab === "notifications"
-                ? MIPO_COLORS.primary
-                : MIPO_COLORS.textLighter
+              activeTab === "notifications" ? theme.primary : theme.textLighter
             }
             size={18}
           />
           <Text
             style={[
               styles.tabText,
-              activeTab === "notifications" && styles.tabTextActive,
+              { color: theme.textLighter },
+              activeTab === "notifications" && {
+                color: theme.primary,
+                fontWeight: "600",
+              },
             ]}
           >
-            Notificações
+            Avisos
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* CONTEÚDO */}
       {activeTab === "requests" && (
         <FlatList
           data={friendRequests}
           keyExtractor={(item) => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              refreshing={isFetchingReqs && !hasNextReqs}
+              onRefresh={onRefresh}
+            />
           }
+          onEndReached={() => hasNextReqs && fetchNextReqs()}
+          onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <UserPlus size={40} color={MIPO_COLORS.border} />
-              <Text style={styles.emptyText}>
-                Você não tem solicitações de amizade.
+              <UserPlus size={40} color={theme.border} />
+              <Text style={[styles.emptyText, { color: theme.textLighter }]}>
+                Nenhuma solicitação.
               </Text>
             </View>
           }
           renderItem={({ item }) => (
             <FriendRequestCard
               request={item}
-              onAccept={handleAcceptRequest}
-              onReject={handleRejectRequest}
+              theme={theme}
+              onAccept={(id: string) => acceptFriendRequestMutation.mutate(id)}
+              onReject={(id: string) => rejectFriendRequestMutation.mutate(id)}
               isLoading={
                 acceptFriendRequestMutation.isPending ||
                 rejectFriendRequestMutation.isPending
@@ -321,16 +345,23 @@ export default function NotificationsScreen() {
           data={notifications}
           keyExtractor={(item: any) => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              refreshing={isFetchingNotifs && !hasNextNotifs}
+              onRefresh={onRefresh}
+            />
           }
+          onEndReached={() => hasNextNotifs && fetchNextNotifs()}
+          onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Bell size={40} color={MIPO_COLORS.border} />
-              <Text style={styles.emptyText}>Você não tem notificações.</Text>
+              <Bell size={40} color={theme.border} />
+              <Text style={[styles.emptyText, { color: theme.textLighter }]}>
+                Você não tem notificações.
+              </Text>
             </View>
           }
           renderItem={({ item }: any) => (
-            <NotificationCard notification={item} />
+            <NotificationCard notification={item} theme={theme} />
           )}
           contentContainerStyle={styles.list}
         />
@@ -340,19 +371,12 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: MIPO_COLORS.background },
-  header: {
-    padding: 20,
-    backgroundColor: MIPO_COLORS.white,
-    borderBottomWidth: 1,
-    borderColor: MIPO_COLORS.border,
-  },
-  title: { fontSize: 22, fontWeight: "bold", color: MIPO_COLORS.text },
+  container: { flex: 1 },
+  header: { padding: 20, borderBottomWidth: 1 },
+  title: { fontSize: 22, fontWeight: "bold" },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: MIPO_COLORS.white,
     borderBottomWidth: 1,
-    borderBottomColor: MIPO_COLORS.border,
     paddingHorizontal: 16,
   },
   tab: {
@@ -365,64 +389,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
-  tabActive: {
-    borderBottomColor: MIPO_COLORS.primary,
-  },
-  tabText: {
-    fontSize: 13,
-    color: MIPO_COLORS.textLighter,
-    fontWeight: "500",
-  },
-  tabTextActive: {
-    color: MIPO_COLORS.primary,
-    fontWeight: "600",
-  },
+  tabText: { fontSize: 13, fontWeight: "500" },
   list: { padding: 16 },
   empty: { alignItems: "center", marginTop: 100 },
-  emptyText: { color: MIPO_COLORS.textLighter, marginTop: 10 },
+  emptyText: { marginTop: 10 },
   friendRequestCard: {
     flexDirection: "row",
-    backgroundColor: MIPO_COLORS.white,
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
     alignItems: "center",
   },
-  friendAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
-  },
-  friendInfo: {
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: MIPO_COLORS.text,
-  },
-  friendCity: {
-    fontSize: 12,
-    color: MIPO_COLORS.textLighter,
-    marginTop: 2,
-  },
-  requestTime: {
-    fontSize: 11,
-    color: MIPO_COLORS.textLighter,
-    marginTop: 2,
-  },
-  friendActions: {
-    flexDirection: "row",
-    gap: 8,
-  },
+  friendAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
+  friendInfo: { flex: 1 },
+  friendName: { fontSize: 14, fontWeight: "600" },
+  friendCity: { fontSize: 12, marginTop: 2 },
+  requestTime: { fontSize: 11, marginTop: 2 },
+  friendActions: { flexDirection: "row", gap: 8 },
   acceptBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: MIPO_COLORS.success,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -430,30 +418,20 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: MIPO_COLORS.border,
     justifyContent: "center",
     alignItems: "center",
   },
   notifCard: {
     flexDirection: "row",
-    backgroundColor: MIPO_COLORS.white,
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: MIPO_COLORS.border,
-  },
-  unreadCard: {
-    backgroundColor: "#f0f4ff",
-    borderColor: "#c7d2fe",
-    borderLeftWidth: 4,
-    borderLeftColor: MIPO_COLORS.primary,
   },
   iconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: MIPO_COLORS.background,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -464,11 +442,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 4,
   },
-  notifTitle: { fontSize: 14, fontWeight: "600", color: MIPO_COLORS.text },
-  notifTime: { fontSize: 10, color: MIPO_COLORS.textLighter },
-  notifMessage: {
-    fontSize: 13,
-    color: MIPO_COLORS.textLighter,
-    lineHeight: 18,
-  },
+  notifTitle: { fontSize: 14, fontWeight: "600" },
+  notifTime: { fontSize: 10 },
+  notifMessage: { fontSize: 13, lineHeight: 18 },
 });

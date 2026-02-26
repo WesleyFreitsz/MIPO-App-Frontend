@@ -81,7 +81,8 @@ export default function CreateChatGroupScreen({ navigation }: any) {
         name: filename,
         type: match ? `image/${match[1]}` : "image/jpeg",
       });
-      const res = await api.post("/uploads/avatar", formData, {
+      // CORRIGIDO: Agora vai para chat-content em vez de misturar com perfis
+      const res = await api.post("/uploads/chat-content", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       return res.data.url;

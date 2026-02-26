@@ -5,13 +5,24 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { api } from "./api";
 
+// Define como o app se comporta quando recebe notificação com ele ABERTO (foreground)
 Notifications.setNotificationHandler({
-  handleNotification: async () =>
-    ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
+  handleNotification: async (notification) => {
+    const title = notification.request.content.title || "";
+
+    // Verifica se é uma notificação "silenciosa" (como likes e comentários)
+    const isQuietNotification =
+      title.includes("Like") || title.includes("Comentário");
+
+    return {
+      shouldShowAlert: !isQuietNotification,
+      shouldPlaySound: !isQuietNotification,
       shouldSetBadge: false,
-    }) as Notifications.NotificationBehavior,
+      // NOVAS PROPRIEDADES EXIGIDAS PELO EXPO:
+      shouldShowBanner: !isQuietNotification,
+      shouldShowList: !isQuietNotification,
+    } as Notifications.NotificationBehavior; // <--- Cast para garantir a tipagem correta
+  },
 });
 
 export function usePushNotifications() {
@@ -57,7 +68,15 @@ export function usePushNotifications() {
         return null;
       }
 
-      const tokenData = await Notifications.getExpoPushTokenAsync();
+      // PARA FUNCIONAR REAL NO ANDROID E IOS EM PRODUÇÃO (APK / TESTFLIGHT)
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ??
+        Constants?.easConfig?.projectId;
+
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId,
+      });
+
       const token = tokenData.data;
 
       setExpoPushToken(token);
@@ -68,7 +87,7 @@ export function usePushNotifications() {
 
       return token;
     } catch (error) {
-      console.log("Aviso: Falha ao obter token push.");
+      console.log("Aviso: Falha ao obter token push.", error);
       return null;
     }
   }

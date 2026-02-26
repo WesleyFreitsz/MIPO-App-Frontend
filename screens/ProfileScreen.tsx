@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   FlatList,
   useColorScheme,
   Modal,
-  SafeAreaView,
+  Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -58,12 +58,30 @@ export default function ProfileScreen({ route, navigation }: any) {
   const [image, setImage] = useState(user?.avatarUrl || null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Modals
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<any>(null);
   const [commentText, setCommentText] = useState("");
 
-  const { data: postsData } = useQuery({
+  const fadeAnim = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0.4,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, [fadeAnim]);
+
+  const { data: postsData, isLoading: isLoadingPosts } = useQuery({
     queryKey: ["posts", "user", user?.id],
     queryFn: async () =>
       (
@@ -72,6 +90,7 @@ export default function ProfileScreen({ route, navigation }: any) {
         })
       ).data,
   });
+
   const { data: friendsData } = useQuery({
     queryKey: ["friends", user?.id],
     queryFn: async () =>
@@ -90,17 +109,47 @@ export default function ProfileScreen({ route, navigation }: any) {
       post.likedByUser
         ? api.delete(`/posts/${post.id}/like`)
         : api.post(`/posts/${post.id}/like`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
-      if (selectedPost) {
-        setSelectedPost({
-          ...selectedPost,
-          likedByUser: !selectedPost.likedByUser,
-          likeCount: selectedPost.likedByUser
-            ? selectedPost.likeCount - 1
-            : selectedPost.likeCount + 1,
-        });
+    onMutate: async (post) => {
+      await queryClient.cancelQueries({
+        queryKey: ["posts", "user", user?.id],
+      });
+      const previousPosts = queryClient.getQueryData([
+        "posts",
+        "user",
+        user?.id,
+      ]);
+      queryClient.setQueryData(["posts", "user", user?.id], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((p: any) =>
+            p.id === post.id
+              ? {
+                  ...p,
+                  likedByUser: !p.likedByUser,
+                  likeCount: p.likedByUser ? p.likeCount - 1 : p.likeCount + 1,
+                }
+              : p,
+          ),
+        };
+      });
+      if (selectedPost?.id === post.id) {
+        setSelectedPost((prev: any) => ({
+          ...prev,
+          likedByUser: !prev.likedByUser,
+          likeCount: prev.likedByUser ? prev.likeCount - 1 : prev.likeCount + 1,
+        }));
       }
+      return { previousPosts };
+    },
+    onError: (err, post, context) => {
+      queryClient.setQueryData(
+        ["posts", "user", user?.id],
+        context?.previousPosts,
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
     },
   });
 
@@ -138,6 +187,7 @@ export default function ProfileScreen({ route, navigation }: any) {
         name: filename,
         type: match ? `image/${match[1]}` : "image/jpeg",
       });
+      // PERFIL É SEMPRE /uploads/avatar
       const res = await api.post("/uploads/avatar", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -171,9 +221,13 @@ export default function ProfileScreen({ route, navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.bg, paddingTop: insets.top },
+      ]}
+    >
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* HEADER */}
         <View style={[styles.header, { backgroundColor: theme.bg }]}>
           <View style={styles.headerTop}>
             <Text style={[styles.headerNickname, { color: theme.text }]}>
@@ -265,7 +319,6 @@ export default function ProfileScreen({ route, navigation }: any) {
             </View>
           </View>
 
-          {/* BIO OU FORMULÁRIO */}
           {editMode ? (
             <View style={styles.editForm}>
               <View
@@ -403,7 +456,6 @@ export default function ProfileScreen({ route, navigation }: any) {
             </>
           )}
 
-          {/* CONQUISTAS */}
           <View style={styles.achievementsSection}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               🏆 Minhas Conquistas
@@ -442,42 +494,61 @@ export default function ProfileScreen({ route, navigation }: any) {
           </View>
         </View>
 
-        {/* GRID DE POSTS */}
-        <View style={styles.postsGrid}>
-          {postsData?.data?.map((item: any) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.gridItem, { borderColor: theme.border }]}
-              onPress={() => setSelectedPost(item)}
-            >
-              {item.imageUrl ? (
-                <Image
-                  source={{ uri: item.imageUrl }}
-                  style={styles.gridImage}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.gridTextOnly,
-                    { backgroundColor: theme.surface },
-                  ]}
-                >
-                  <Text
-                    style={{ color: theme.text, fontSize: 10 }}
-                    numberOfLines={4}
+        {isLoadingPosts ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Animated.View
+                key={i}
+                style={{
+                  opacity: fadeAnim,
+                  width: "33.33%",
+                  aspectRatio: 1,
+                  borderWidth: 0.5,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                }}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.postsGrid}>
+            {postsData?.data?.map((item: any) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.gridItem, { borderColor: theme.border }]}
+                onPress={() => setSelectedPost(item)}
+              >
+                {item.imageUrl ? (
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={styles.gridImage}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.gridTextOnly,
+                      { backgroundColor: theme.surface },
+                    ]}
                   >
-                    {item.content}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
+                    <Text
+                      style={{ color: theme.text, fontSize: 10 }}
+                      numberOfLines={4}
+                    >
+                      {item.content}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       {/* MODAL LISTA DE AMIGOS */}
       <Modal visible={showFriendsModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View
             style={[styles.modalHeader, { borderBottomColor: theme.border }]}
           >
@@ -524,12 +595,14 @@ export default function ProfileScreen({ route, navigation }: any) {
               </TouchableOpacity>
             )}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
       <Modal visible={!!selectedPost} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
           <View
             style={[styles.modalHeader, { borderBottomColor: theme.border }]}
           >
@@ -665,9 +738,9 @@ export default function ProfileScreen({ route, navigation }: any) {
               </Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -756,7 +829,6 @@ const styles = StyleSheet.create({
     height: 44,
   },
   input: { flex: 1, marginLeft: 8 },
-
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -778,7 +850,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginLeft: 8,
   },
-
   postFullHeader: { flexDirection: "row", alignItems: "center", padding: 12 },
   postAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
   postName: { fontWeight: "bold", fontSize: 14 },
