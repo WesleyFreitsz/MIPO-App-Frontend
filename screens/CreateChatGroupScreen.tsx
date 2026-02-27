@@ -17,6 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MIPO_COLORS = {
   primary: "#E11D48",
@@ -55,6 +56,7 @@ export default function CreateChatGroupScreen({ navigation }: any) {
   const [groupImage, setGroupImage] = useState<string | null>(null);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const { data: friendsData, isLoading } = useQuery({
     queryKey: ["friends", "list"],
@@ -141,7 +143,8 @@ export default function CreateChatGroupScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {" "}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <ChevronLeft color={MIPO_COLORS.text} size={24} />
@@ -149,7 +152,6 @@ export default function CreateChatGroupScreen({ navigation }: any) {
         <Text style={styles.headerTitle}>Novo Grupo</Text>
         <View style={{ width: 24 }} />
       </View>
-
       <ScrollView style={styles.content}>
         <View style={{ alignItems: "center", marginBottom: 20 }}>
           <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
@@ -207,7 +209,6 @@ export default function CreateChatGroupScreen({ navigation }: any) {
           )}
         </View>
       </ScrollView>
-
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.createButton, isCreating && { opacity: 0.6 }]}
@@ -224,7 +225,7 @@ export default function CreateChatGroupScreen({ navigation }: any) {
           )}
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -289,6 +290,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: 16,
+    marginBottom: 35,
     backgroundColor: MIPO_COLORS.white,
     borderTopWidth: 1,
     borderColor: MIPO_COLORS.border,

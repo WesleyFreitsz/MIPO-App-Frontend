@@ -18,7 +18,6 @@ import {
 } from "react-native";
 import {
   Send,
-  ChevronLeft,
   X,
   UserPlus,
   LogOut,
@@ -29,6 +28,9 @@ import {
   Trash2,
   Edit2,
   Camera,
+  CheckCheck,
+  Palette,
+  Shield,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import {
@@ -41,17 +43,70 @@ import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ColorPicker from "react-native-wheel-color-picker";
 
 const WA_BG_LIGHT =
   "https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png";
 const WA_BG_DARK =
   "https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png";
 
-const MessageBubble = ({ message, isOwn, theme }: any) => {
+const PRETTY_COLORS = [
+  "#FF5733",
+  "#33A1FF",
+  "#9B59B6",
+  "#2ECC71",
+  "#E67E22",
+  "#E74C3C",
+  "#1ABC9C",
+  "#F1C40F",
+  "#34495E",
+  "#FF1493",
+  "#00CED1",
+  "#FF8C00",
+];
+
+const getColorForName = (name: string) => {
+  if (!name) return PRETTY_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % PRETTY_COLORS.length;
+  return PRETTY_COLORS[index];
+};
+
+// --- FUNÇÃO DE CONTRASTE AUTOMÁTICO ---
+const getContrastColor = (hexColor: string) => {
+  if (!hexColor) return "#000000";
+  let hex = hexColor.replace("#", "");
+  if (hex.length === 3)
+    hex = hex
+      .split("")
+      .map((c) => c + c)
+      .join("");
+
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+
+  // Fórmula de luminância (YIQ)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+
+  // Se for claro, retorna Preto. Se for escuro, retorna Branco.
+  return yiq >= 128 ? "#000000" : "#ffffff";
+};
+
+const MessageBubble = ({ message, isOwn, theme, onLongPress }: any) => {
   const time = new Date(message.createdAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const senderNameColor =
+    message.member?.customColor ||
+    getColorForName(message.user?.nickname || message.user?.name);
+  const bubbleBgColor = isOwn ? theme.bubbleOwn : theme.bubbleOther;
+
   return (
     <View
       style={[
@@ -59,36 +114,72 @@ const MessageBubble = ({ message, isOwn, theme }: any) => {
         isOwn ? styles.wrapperOwn : styles.wrapperOther,
       ]}
     >
-      <View
-        style={[
-          styles.bubble,
-          isOwn
-            ? { backgroundColor: theme.bubbleOwn }
-            : { backgroundColor: theme.bubbleOther },
-        ]}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onLongPress={() => onLongPress(message)}
+        style={[styles.bubble, { backgroundColor: bubbleBgColor }]}
       >
         {!isOwn && (
-          <Text style={[styles.senderName, { color: theme.senderColor }]}>
+          <Text style={[styles.senderName, { color: senderNameColor }]}>
             {message.user?.nickname || message.user?.name}
           </Text>
         )}
-        <Text
-          style={[
-            styles.msgText,
-            { color: isOwn ? theme.textOwn : theme.textOther },
-          ]}
-        >
-          {message.content}
-        </Text>
-        <Text
-          style={[
-            styles.msgTime,
-            { color: isOwn ? theme.textMutedOwn : theme.textMutedOther },
-          ]}
-        >
-          {time}
-        </Text>
-      </View>
+
+        {message.isDeleted ? (
+          <Text
+            style={[
+              styles.msgText,
+              {
+                color: isOwn ? theme.textMutedOwn : theme.textMutedOther,
+                fontStyle: "italic",
+              },
+            ]}
+          >
+            🚫 Esta mensagem foi apagada.
+          </Text>
+        ) : (
+          <Text
+            style={[
+              styles.msgText,
+              { color: isOwn ? theme.textOwn : theme.textOther },
+            ]}
+          >
+            {message.content}
+          </Text>
+        )}
+
+        <View style={styles.msgFooter}>
+          {message.isEdited && !message.isDeleted && (
+            <Text
+              style={[
+                styles.msgTime,
+                {
+                  color: isOwn ? theme.textMutedOwn : theme.textMutedOther,
+                  marginRight: 5,
+                  fontStyle: "italic",
+                },
+              ]}
+            >
+              (editado)
+            </Text>
+          )}
+          <Text
+            style={[
+              styles.msgTime,
+              { color: isOwn ? theme.textMutedOwn : theme.textMutedOther },
+            ]}
+          >
+            {time}
+          </Text>
+          {isOwn && (
+            <CheckCheck
+              size={14}
+              color={message.isRead ? "#34B7F1" : theme.textMutedOwn}
+              style={{ marginLeft: 4 }}
+            />
+          )}
+        </View>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -104,21 +195,32 @@ export default function ChatDetailScreen({ route, navigation }: any) {
 
   const [groupInfoModal, setGroupInfoModal] = useState(false);
   const [addMemberModal, setAddMemberModal] = useState(false);
+  const [eventModalVisible, setEventModalVisible] = useState(false);
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
+
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [isEditingGroup, setIsEditingGroup] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editImage, setEditImage] = useState<string | null>(null);
-  const [eventModalVisible, setEventModalVisible] = useState(false);
   const [eventData, setEventData] = useState<any>(null);
+  const [editingMessage, setEditingMessage] = useState<any>(null);
+
+  const [activeThemeTab, setActiveThemeTab] = useState<"BUBBLE" | "NAME">(
+    "BUBBLE",
+  );
+
+  const [wheelColor, setWheelColor] = useState<string>("#ffffff");
+  const [previewNameColor, setPreviewNameColor] = useState<string>("");
 
   const theme = {
     bg: isDark ? "#0b141a" : "#faf6f1",
-    bubbleOwn: isDark ? "#9f1d1d" : "#c73636",
+    primary: isDark ? "#40da61" : "#40da61", // Botão e Destaques em verde
+    bubbleOwn: isDark ? "#202c33" : "#ffffff",
     bubbleOther: isDark ? "#202c33" : "#ffffff",
-    textOwn: "#ffffff",
+    textOwn: isDark ? "#e9edef" : "#111b21",
     textOther: isDark ? "#e9edef" : "#111b21",
-    textMutedOwn: "rgba(255,255,255,0.7)",
+    textMutedOwn: isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.45)",
     textMutedOther: isDark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.45)",
     senderColor: isDark ? "#ef4444" : "#c73636",
     inputBg: isDark ? "#202c33" : "#ffffff",
@@ -127,14 +229,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const { joinChat, leaveChat, sendMessage, messages, isConnected } =
     useWebSocketChat();
 
-  // CORREÇÃO: Usando a rota POST para marcar como lida
   useEffect(() => {
     if (chatId) {
       api
         .post(`/chats/${chatId}/mark-as-read`)
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["chats"] });
-        })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["chats"] }))
         .catch(() => {});
     }
   }, [chatId, queryClient]);
@@ -146,12 +245,12 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     isFetchingNextPage,
   } = useInfiniteQuery({
     queryKey: ["chat", chatId, "messages"],
-    queryFn: async ({ pageParam = 0 }) => {
-      const res = await api.get(`/chats/${chatId}/messages`, {
-        params: { skip: pageParam, take: 15 },
-      });
-      return res.data;
-    },
+    queryFn: async ({ pageParam = 0 }) =>
+      (
+        await api.get(`/chats/${chatId}/messages`, {
+          params: { skip: pageParam, take: 15 },
+        })
+      ).data,
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
@@ -160,7 +259,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
   const { data: chatDetails, refetch: refetchChatDetails } = useQuery({
     queryKey: ["chatDetails", chatId],
     queryFn: async () => (await api.get(`/chats/${chatId}`)).data,
-    enabled: !!chatId && (type === "GROUP" || type === "EVENT"),
+    enabled: !!chatId,
   });
 
   const { data: friendsData } = useQuery({
@@ -187,14 +286,36 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     };
   }, [chatId, isConnected]);
 
-  useEffect(() => {
-    if (groupInfoModal && chatDetails) {
-      setEditName(chatDetails.name || name);
-      setEditDesc(chatDetails.description || "");
-      setEditImage(chatDetails.imageUrl || avatar);
-      setIsEditingGroup(false);
-    }
-  }, [groupInfoModal, chatDetails]);
+  const isPrivate = type === "PRIVATE" || chatDetails?.type === "PRIVATE";
+  const otherMember = chatDetails?.members?.find(
+    (m: any) => m.userId !== user?.id,
+  )?.user;
+  const displayAvatar = isPrivate
+    ? otherMember?.avatarUrl || avatar
+    : chatDetails?.imageUrl || avatar;
+  const displayName = isPrivate
+    ? otherMember?.nickname || otherMember?.name || name
+    : chatDetails?.name || name;
+  const displayTargetId = isPrivate ? otherMember?.id || targetId : targetId;
+  const amIAdmin = chatDetails?.members?.some(
+    (m: any) => m.userId === user?.id && m.role === "ADMIN",
+  );
+
+  const myMemberData = chatDetails?.members?.find(
+    (m: any) => m.userId === user?.id,
+  );
+
+  const personalBgColor = myMemberData?.backgroundTheme || theme.bg;
+  const activeBgColor = themeModalVisible ? wheelColor : personalBgColor;
+
+  // Calcula dinamicamente se o Header fica branco ou preto com base no fundo atual
+  const contrastColor = getContrastColor(activeBgColor);
+
+  const handleOpenThemeModal = () => {
+    setWheelColor(myMemberData?.backgroundTheme || theme.bg);
+    setPreviewNameColor(myMemberData?.customColor || "");
+    setThemeModalVisible(true);
+  };
 
   React.useLayoutEffect(() => {
     let headerSubtitle =
@@ -203,14 +324,15 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         : type === "EVENT"
           ? "Toque para detalhes do evento"
           : "Ver perfil";
+
     navigation.setOptions({
       headerTitle: () => (
         <TouchableOpacity
           style={{ flexDirection: "row", alignItems: "center" }}
           onPress={() => {
-            if (type === "PRIVATE" && targetId) {
-              navigation.navigate("PlayerProfile", { userId: targetId });
-            } else if (type === "EVENT" && chatId) {
+            if (isPrivate && displayTargetId)
+              navigation.navigate("PlayerProfile", { userId: displayTargetId });
+            else if (type === "EVENT" && chatId) {
               api
                 .get("/events")
                 .then((res) => {
@@ -220,65 +342,115 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                   if (eventoEncontrado) {
                     setEventData(eventoEncontrado);
                     setEventModalVisible(true);
-                  } else {
-                    Alert.alert(
-                      "Aviso",
-                      "Este evento não foi encontrado ou já foi encerrado.",
-                    );
-                  }
+                  } else Alert.alert("Aviso", "Evento não encontrado.");
                 })
                 .catch(() =>
                   Alert.alert("Erro", "Não foi possível carregar o evento."),
                 );
-            } else if (type === "GROUP") {
-              setGroupInfoModal(true);
-            }
+            } else if (type === "GROUP") setGroupInfoModal(true);
           }}
         >
           <Image
             source={{
               uri:
-                chatDetails?.imageUrl ||
-                avatar ||
-                `https://api.dicebear.com/7.x/initials/svg?seed=${name}`,
+                displayAvatar ||
+                `https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`,
             }}
             style={styles.headerAvatar}
           />
           <View>
-            <Text style={styles.headerName} numberOfLines={1}>
-              {chatDetails?.name || name || "Conversa"}
+            <Text
+              style={[styles.headerName, { color: contrastColor }]}
+              numberOfLines={1}
+            >
+              {displayName || "Conversa"}
             </Text>
-            <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
+            <Text
+              style={[
+                styles.headerSubtitle,
+                { color: contrastColor, opacity: 0.8 },
+              ]}
+            >
+              {headerSubtitle}
+            </Text>
           </View>
         </TouchableOpacity>
       ),
-      headerStyle: { backgroundColor: theme.bubbleOwn },
-      headerTintColor: "#fff",
+      headerStyle: { backgroundColor: activeBgColor },
+      headerTintColor: contrastColor, // Cor da Seta de Voltar
       title: "",
+      headerRight: () => (
+        <TouchableOpacity
+          style={{ marginRight: 15 }}
+          onPress={handleOpenThemeModal}
+        >
+          <Palette color={contrastColor} size={24} />
+        </TouchableOpacity>
+      ),
     });
-  }, [navigation, name, avatar, type, targetId, chatDetails]);
+  }, [
+    navigation,
+    displayName,
+    displayAvatar,
+    type,
+    displayTargetId,
+    chatDetails,
+    myMemberData,
+    contrastColor,
+    activeBgColor,
+  ]);
 
-  const handleSend = () => {
-    if (!messageText.trim() || !chatId) return;
-    sendMessage(chatId, messageText.trim());
-    setMessageText("");
-  };
+  const editMessageMutation = useMutation({
+    mutationFn: (data: { id: string; content: string }) =>
+      api.patch(`/chats/messages/${data.id}`, { content: data.content }),
+    onSuccess: () => {
+      setEditingMessage(null);
+      setMessageText("");
+      queryClient.invalidateQueries({ queryKey: ["chat", chatId, "messages"] });
+    },
+  });
+
+  const deleteMessageMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/chats/messages/${id}`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["chat", chatId, "messages"] }),
+  });
+
+  const updateThemeMutation = useMutation({
+    mutationFn: (color: string) =>
+      api.patch(`/chats/${chatId}/my-background`, { theme: color }),
+    onSuccess: () => {
+      Alert.alert("Sucesso", "Sua cor de fundo foi atualizada!");
+      setThemeModalVisible(false);
+      refetchChatDetails();
+    },
+  });
+
+  const updateNameColorMutation = useMutation({
+    mutationFn: (color: string) =>
+      api.patch(`/chats/${chatId}/my-color`, { color }),
+    onSuccess: () => {
+      Alert.alert("Sucesso", "Cor do seu nome atualizada!");
+      setThemeModalVisible(false);
+      refetchChatDetails();
+    },
+  });
+
+  const promoteToAdminMutation = useMutation({
+    mutationFn: (targetUserId: string) =>
+      api.patch(`/chats/${chatId}/members/${targetUserId}/promote`),
+    onSuccess: () => {
+      Alert.alert("Sucesso", "Membro promovido a admin!");
+      refetchChatDetails();
+    },
+  });
 
   const removeMemberMutation = useMutation({
     mutationFn: (memberId: string) =>
       api.delete(`/chats/${chatId}/members/${memberId}`),
     onSuccess: () => refetchChatDetails(),
   });
-  const confirmRemoveMember = (memberId: string, memberName: string) => {
-    Alert.alert("Confirmação", `Remover ${memberName} do grupo?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Remover",
-        style: "destructive",
-        onPress: () => removeMemberMutation.mutate(memberId),
-      },
-    ]);
-  };
+
   const addMembersMutation = useMutation({
     mutationFn: (memberIds: string[]) =>
       api.post(`/chats/${chatId}/members`, { memberIds }),
@@ -289,6 +461,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       refetchChatDetails();
     },
   });
+
   const leaveChatMutation = useMutation({
     mutationFn: () => api.post(`/chats/${chatId}/leave`),
     onSuccess: () => {
@@ -297,6 +470,78 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       queryClient.invalidateQueries({ queryKey: ["chats"] });
     },
   });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async () => {
+      let finalImageUrl = chatDetails?.imageUrl;
+      if (editImage && editImage !== chatDetails?.imageUrl)
+        finalImageUrl = (await uploadImageAsync(editImage)) || finalImageUrl;
+      return api.patch(`/chats/${chatId}`, {
+        name: editName,
+        description: editDesc,
+        imageUrl: finalImageUrl,
+      });
+    },
+    onSuccess: () => {
+      setIsEditingGroup(false);
+      refetchChatDetails();
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+    },
+  });
+
+  const handleSend = () => {
+    if (!messageText.trim() || !chatId) return;
+    if (editingMessage)
+      editMessageMutation.mutate({
+        id: editingMessage.id,
+        content: messageText.trim(),
+      });
+    else {
+      sendMessage(chatId, messageText.trim());
+      setMessageText("");
+    }
+  };
+
+  const handleMessageLongPress = (message: any) => {
+    if (message.userId !== user?.id || message.isDeleted) return;
+    Alert.alert("Opções da Mensagem", "O que deseja fazer?", [
+      {
+        text: "Editar",
+        onPress: () => {
+          setEditingMessage(message);
+          setMessageText(message.content);
+        },
+      },
+      {
+        text: "Apagar",
+        style: "destructive",
+        onPress: () => deleteMessageMutation.mutate(message.id),
+      },
+      { text: "Cancelar", style: "cancel" },
+    ]);
+  };
+
+  const confirmRemoveMember = (memberId: string, memberName: string) => {
+    Alert.alert("Confirmação", `Remover ${memberName} do grupo?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: () => removeMemberMutation.mutate(memberId),
+      },
+    ]);
+  };
+
+  const confirmPromoteAdmin = (memberId: string, memberName: string) => {
+    Alert.alert("Promover", `Tornar ${memberName} administrador?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Promover",
+        onPress: () => promoteToAdminMutation.mutate(memberId),
+      },
+    ]);
+  };
+
   const uploadImageAsync = async (uri: string) => {
     try {
       const formData = new FormData();
@@ -316,24 +561,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
       return null;
     }
   };
-  const updateGroupMutation = useMutation({
-    mutationFn: async () => {
-      let finalImageUrl = chatDetails?.imageUrl;
-      if (editImage && editImage !== chatDetails?.imageUrl) {
-        finalImageUrl = (await uploadImageAsync(editImage)) || finalImageUrl;
-      }
-      return api.patch(`/chats/${chatId}`, {
-        name: editName,
-        description: editDesc,
-        imageUrl: finalImageUrl,
-      });
-    },
-    onSuccess: () => {
-      setIsEditingGroup(false);
-      refetchChatDetails();
-      queryClient.invalidateQueries({ queryKey: ["chats"] });
-    },
-  });
+
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
@@ -344,9 +572,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     if (!res.canceled) setEditImage(res.assets[0].uri);
   };
 
-  const amIAdmin = chatDetails?.members?.some(
-    (m: any) => m.userId === user?.id && m.role === "ADMIN",
-  );
   const friendsNotInGroup =
     friendsData?.data?.filter(
       (friend: any) =>
@@ -354,7 +579,6 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           (member: any) => member.userId === friend.id,
         ),
     ) || [];
-  const isLoadingAdd = addMembersMutation.isPending;
   const getTime = (dateIso: string) =>
     new Date(dateIso).toLocaleTimeString("pt-BR", {
       hour: "2-digit",
@@ -362,15 +586,20 @@ export default function ChatDetailScreen({ route, navigation }: any) {
     });
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: activeBgColor,
+      }}
+    >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
         style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
       >
         <ImageBackground
           source={{ uri: isDark ? WA_BG_DARK : WA_BG_LIGHT }}
-          style={styles.bgImage}
+          style={[styles.bgImage, { backgroundColor: activeBgColor }]}
           imageStyle={{ opacity: isDark ? 0.2 : 0.6 }}
         >
           <FlatList
@@ -383,6 +612,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                 message={item}
                 isOwn={item.userId === user?.id}
                 theme={theme}
+                onLongPress={handleMessageLongPress}
               />
             )}
             onEndReached={() => {
@@ -397,11 +627,25 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           />
         </ImageBackground>
 
+        {editingMessage && (
+          <View style={styles.editingBanner}>
+            <Text style={styles.editingText}>Editando mensagem...</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setEditingMessage(null);
+                setMessageText("");
+              }}
+            >
+              <X size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View
           style={[
             styles.inputContainer,
             {
-              backgroundColor: theme.bg,
+              backgroundColor: activeBgColor,
               paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 15,
             },
           ]}
@@ -414,7 +658,9 @@ export default function ChatDetailScreen({ route, navigation }: any) {
           >
             <TextInput
               style={[styles.input, { color: theme.textOther }]}
-              placeholder="Mensagem"
+              placeholder={
+                editingMessage ? "Edite sua mensagem..." : "Mensagem"
+              }
               placeholderTextColor={theme.textMutedOther}
               value={messageText}
               onChangeText={setMessageText}
@@ -422,14 +668,274 @@ export default function ChatDetailScreen({ route, navigation }: any) {
             />
           </View>
           <TouchableOpacity
-            style={[styles.sendCircle, { backgroundColor: theme.bubbleOwn }]}
+            style={[styles.sendCircle, { backgroundColor: theme.primary }]}
             onPress={handleSend}
           >
-            <Send color="#fff" size={20} style={{ marginLeft: 4 }} />
+            {editingMessage ? (
+              <Check color="#000" size={20} />
+            ) : (
+              <Send color="#000" size={25} style={{ marginRight: 2 }} />
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
+      {/* --- MODAL DE TEMAS / CORES COM PREVIEW --- */}
+      <Modal visible={themeModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.eventModalContent}>
+            <View style={styles.eventModalHeader}>
+              <Text
+                style={{ fontSize: 18, fontWeight: "bold", color: "#1e293b" }}
+              >
+                Personalizar Chat
+              </Text>
+              <TouchableOpacity onPress={() => setThemeModalVisible(false)}>
+                <X color="#64748b" size={24} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Abas de Navegação */}
+            {!isPrivate && (
+              <View style={styles.tabsContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.tab,
+                    activeThemeTab === "BUBBLE" && styles.activeTab,
+                  ]}
+                  onPress={() => setActiveThemeTab("BUBBLE")}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      activeThemeTab === "BUBBLE" && styles.activeTabText,
+                    ]}
+                  >
+                    Fundo
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.tab,
+                    activeThemeTab === "NAME" && styles.activeTab,
+                  ]}
+                  onPress={() => setActiveThemeTab("NAME")}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      activeThemeTab === "NAME" && styles.activeTabText,
+                    ]}
+                  >
+                    Cor do Nome
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              {/* ABA DE FUNDO */}
+              {activeThemeTab === "BUBBLE" ? (
+                <View style={{ alignItems: "center" }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#64748b",
+                      marginBottom: 20,
+                      textAlign: "center",
+                    }}
+                  >
+                    Mova a roda para ver o resultado em tempo real no fundo.
+                  </Text>
+                  <View
+                    style={{ width: "100%", height: 300, marginBottom: 25 }}
+                  >
+                    <ColorPicker
+                      color={wheelColor}
+                      /* FIX do Infinite Loop: onColorChangeComplete ao invés de onColorChange */
+                      onColorChangeComplete={(color) => setWheelColor(color)}
+                      thumbSize={30}
+                      sliderSize={30}
+                      noSnap={true}
+                      row={false}
+                    />
+                  </View>
+                  <View
+                    style={{ flexDirection: "row", gap: 15, width: "100%" }}
+                  >
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: "#e2e8f0",
+                        padding: 12,
+                        borderRadius: 8,
+                        flex: 1,
+                        alignItems: "center",
+                      }}
+                      onPress={() => updateThemeMutation.mutate("")}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          color: "#64748b",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Remover Fundo
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: "#c73636", // Cor de salvar
+                        padding: 12,
+                        borderRadius: 8,
+                        flex: 1,
+                        alignItems: "center",
+                      }}
+                      onPress={() => updateThemeMutation.mutate(wheelColor)}
+                    >
+                      {updateThemeMutation.isPending ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: "#fff",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          Salvar Cor
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                /* ABA DE NOME COM BALÃO DE TESTE (PREVIEW) */
+                <View>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#64748b",
+                      marginBottom: 15,
+                      textAlign: "center",
+                    }}
+                  >
+                    Como os outros verão seu nome:
+                  </Text>
+
+                  {/* Balão de Teste */}
+                  <View
+                    style={{
+                      backgroundColor: theme.bubbleOther,
+                      padding: 10,
+                      borderRadius: 12,
+                      elevation: 1,
+                      alignSelf: "center",
+                      marginBottom: 25,
+                      maxWidth: "80%",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color:
+                          previewNameColor ||
+                          getColorForName(
+                            user?.nickname || user?.name || "Visitante",
+                          ),
+                        fontWeight: "bold",
+                        marginBottom: 5,
+                      }}
+                    >
+                      {user?.nickname || user?.name || "Seu Nome"}
+                    </Text>
+                    <Text style={{ color: theme.textOther }}>
+                      Essa é uma mensagem de teste do seu nome.
+                    </Text>
+                  </View>
+
+                  <View style={styles.colorsGrid}>
+                    {PRETTY_COLORS.map((color) => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          previewNameColor === color && {
+                            borderWidth: 3,
+                            borderColor: "#c73636",
+                          }, // Destaca o selecionado
+                        ]}
+                        onPress={() => setPreviewNameColor(color)}
+                      />
+                    ))}
+                  </View>
+
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 15,
+                      width: "100%",
+                      marginTop: 30,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: "#e2e8f0",
+                        padding: 12,
+                        borderRadius: 8,
+                        flex: 1,
+                        alignItems: "center",
+                      }}
+                      onPress={() => {
+                        setPreviewNameColor("");
+                        updateNameColorMutation.mutate("");
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          color: "#64748b",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        Cor Padrão
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: "#c73636", // Botão de Salvar
+                        padding: 12,
+                        borderRadius: 8,
+                        flex: 1,
+                        alignItems: "center",
+                      }}
+                      onPress={() =>
+                        updateNameColorMutation.mutate(previewNameColor)
+                      }
+                    >
+                      {updateNameColorMutation.isPending ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: "#fff",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          Salvar Cor
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MODAL DO GRUPO (Mantido) --- */}
       <Modal visible={groupInfoModal} animationType="slide">
         <View
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
@@ -503,14 +1009,12 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                     style={styles.editInput}
                     value={editName}
                     onChangeText={setEditName}
-                    placeholder="Nome do grupo"
                   />
                   <Text style={styles.inputLabel}>Descrição</Text>
                   <TextInput
                     style={[styles.editInput, { height: 80 }]}
                     value={editDesc}
                     onChangeText={setEditDesc}
-                    placeholder="Descrição"
                     multiline
                   />
                 </View>
@@ -558,15 +1062,21 @@ export default function ChatDetailScreen({ route, navigation }: any) {
               >
                 Integrantes ({chatDetails?.members?.length || 0})
               </Text>
+
               {amIAdmin && (
                 <TouchableOpacity
                   style={styles.addMemberRow}
-                  onPress={() => setAddMemberModal(true)}
+                  onPress={() => {
+                    setGroupInfoModal(false);
+                    setTimeout(() => {
+                      setAddMemberModal(true);
+                    }, 400);
+                  }}
                 >
                   <View
                     style={[
                       styles.iconCircle,
-                      { backgroundColor: theme.bubbleOwn },
+                      { backgroundColor: theme.primary },
                     ]}
                   >
                     <UserPlus color="#fff" size={20} />
@@ -574,7 +1084,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                   <Text
                     style={{
                       fontSize: 16,
-                      color: theme.textOther,
+                      color: theme.textOther, 
                       fontWeight: "bold",
                     }}
                   >
@@ -582,6 +1092,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                   </Text>
                 </TouchableOpacity>
               )}
+
               {chatDetails?.members?.map((item: any) => (
                 <View key={item.id} style={styles.memberRow}>
                   <Image
@@ -609,22 +1120,46 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                         ? "Você"
                         : item.user?.nickname || item.user?.name}
                     </Text>
+                    {item.role === "ADMIN" && (
+                      <Text style={{ fontSize: 12, color: "#10b981" }}>
+                        Administrador
+                      </Text>
+                    )}
                   </View>
+
                   {amIAdmin && item.userId !== user?.id && (
-                    <TouchableOpacity
-                      onPress={() =>
-                        confirmRemoveMember(
-                          item.userId,
-                          item.user?.nickname || item.user?.name,
-                        )
-                      }
-                      style={{ padding: 8 }}
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center" }}
                     >
-                      <Trash2 color="#ef4444" size={20} />
-                    </TouchableOpacity>
+                      {item.role !== "ADMIN" && (
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmPromoteAdmin(
+                              item.userId,
+                              item.user?.nickname || item.user?.name,
+                            )
+                          }
+                          style={{ padding: 8, marginRight: 5 }}
+                        >
+                          <Shield color="#3b82f6" size={20} />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        onPress={() =>
+                          confirmRemoveMember(
+                            item.userId,
+                            item.user?.nickname || item.user?.name,
+                          )
+                        }
+                        style={{ padding: 8 }}
+                      >
+                        <Trash2 color="#ef4444" size={20} />
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
               ))}
+
               <TouchableOpacity
                 style={styles.leaveGroupBtn}
                 onPress={() => leaveChatMutation.mutate()}
@@ -641,6 +1176,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         </View>
       </Modal>
 
+      {/* --- MODAL ADICIONAR AMIGOS (Mantido) --- */}
       <Modal visible={addMemberModal} animationType="slide">
         <View
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
@@ -660,9 +1196,11 @@ export default function ChatDetailScreen({ route, navigation }: any) {
             </Text>
             <TouchableOpacity
               onPress={() => addMembersMutation.mutate(selectedFriends)}
-              disabled={selectedFriends.length === 0 || isLoadingAdd}
+              disabled={
+                selectedFriends.length === 0 || addMembersMutation.isPending
+              }
             >
-              {isLoadingAdd ? (
+              {addMembersMutation.isPending ? (
                 <ActivityIndicator color={theme.senderColor} size="small" />
               ) : (
                 <Text
@@ -698,13 +1236,13 @@ export default function ChatDetailScreen({ route, navigation }: any) {
               return (
                 <TouchableOpacity
                   style={styles.memberRow}
-                  onPress={() => {
+                  onPress={() =>
                     setSelectedFriends((prev) =>
                       isSelected
                         ? prev.filter((id) => id !== item.id)
                         : [...prev, item.id],
-                    );
-                  }}
+                    )
+                  }
                 >
                   <Image
                     source={{
@@ -747,6 +1285,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
         </View>
       </Modal>
 
+      {/* --- MODAL EVENTO (Mantido) --- */}
       <Modal visible={eventModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.eventModalContent}>
@@ -838,6 +1377,7 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                 >
                   {eventData?.description}
                 </Text>
+
                 <Text
                   style={{
                     fontSize: 18,
@@ -864,31 +1404,42 @@ export default function ChatDetailScreen({ route, navigation }: any) {
                         key={p.id}
                         style={{ alignItems: "center", width: 60 }}
                       >
-                        <Image
-                          source={{
-                            uri:
-                              p.avatarUrl ||
-                              `https://api.dicebear.com/7.x/initials/svg?seed=${p.name}`,
+                        <TouchableOpacity
+                          key={p.id}
+                          style={{ alignItems: "center", width: 60 }}
+                          onPress={() => {
+                            setEventModalVisible(false);
+                            navigation.navigate("PlayerProfile", {
+                              userId: p.id,
+                            });
                           }}
-                          style={{
-                            width: 45,
-                            height: 45,
-                            borderRadius: 22.5,
-                            borderWidth: 2,
-                            borderColor: "#c73636",
-                          }}
-                        />
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            color: "#64748b",
-                            marginTop: 4,
-                            textAlign: "center",
-                          }}
-                          numberOfLines={1}
                         >
-                          {p.nickname || p.name.split(" ")[0]}
-                        </Text>
+                          <Image
+                            source={{
+                              uri:
+                                p.avatarUrl ||
+                                `https://api.dicebear.com/7.x/initials/svg?seed=${p.name}`,
+                            }}
+                            style={{
+                              width: 45,
+                              height: 45,
+                              borderRadius: 22.5,
+                              borderWidth: 2,
+                              borderColor: "#c73636",
+                            }}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              color: "#64748b",
+                              marginTop: 4,
+                              textAlign: "center",
+                            }}
+                            numberOfLines={1}
+                          >
+                            {p.nickname || p.name.split(" ")[0]}
+                          </Text>
+                        </TouchableOpacity>
                         <View
                           style={{
                             position: "absolute",
@@ -928,20 +1479,21 @@ const styles = StyleSheet.create({
     marginRight: 10,
     backgroundColor: "#fff",
   },
-  headerName: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  headerSubtitle: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
+  headerName: { fontWeight: "bold", fontSize: 16 },
+  headerSubtitle: { fontSize: 12 },
   bubbleWrapper: { width: "100%", flexDirection: "row", marginBottom: 4 },
   wrapperOwn: { justifyContent: "flex-end" },
   wrapperOther: { justifyContent: "flex-start" },
   bubble: { maxWidth: "80%", padding: 8, borderRadius: 12, elevation: 1 },
   senderName: { fontSize: 13, fontWeight: "bold", marginBottom: 2 },
   msgText: { fontSize: 15, lineHeight: 20 },
-  msgTime: {
-    fontSize: 11,
+  msgFooter: {
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "flex-end",
-    marginTop: 4,
-    marginLeft: 15,
+    marginTop: 2,
   },
+  msgTime: { fontSize: 11 },
   inputContainer: {
     flexDirection: "row",
     paddingHorizontal: 10,
@@ -965,6 +1517,8 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#000",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1041,7 +1595,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
-    height: "85%",
+    maxHeight: "90%",
     paddingBottom: 20,
   },
   eventModalHeader: {
@@ -1050,5 +1604,41 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
+  },
+  editingBanner: {
+    backgroundColor: "#fee2e2",
+    padding: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginHorizontal: 10,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+  },
+  editingText: { color: "#ef4444", fontWeight: "bold", fontSize: 13 },
+  tabsContainer: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  tab: { flex: 1, paddingVertical: 15, alignItems: "center" },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: "#c73636" },
+  tabText: { fontSize: 14, color: "#64748b", fontWeight: "600" },
+  activeTabText: { color: "#c73636" },
+  colorsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 15,
+    justifyContent: "center",
+  },
+  colorOption: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
   },
 });

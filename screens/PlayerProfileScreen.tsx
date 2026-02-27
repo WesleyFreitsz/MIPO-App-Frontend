@@ -13,13 +13,26 @@ import {
   useColorScheme,
   TextInput,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { ChevronLeft, Heart, MessageCircle, X } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import {
+  ChevronLeft,
+  Heart,
+  MessageCircle,
+  X,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  Camera,
+} from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import AchievementsHighlights from "./components/AchievementsHighlights";
 
 export default function PlayerProfileScreen({ route, navigation }: any) {
   const { userId } = route.params;
@@ -28,6 +41,17 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
+  const [clickOpenAchievements, setClickOpenAchievements] = useState(0);
+
+  const { data: achievementsData = [] } = useQuery({
+    queryKey: ["achievements", userId],
+    queryFn: async () => (await api.get(`/achievements?userId=${userId}`)).data,
+    enabled: !!userId,
+  });
+
+  const obtainedAchCount = achievementsData.filter(
+    (a: any) => a.isObtained,
+  ).length;
 
   const theme = {
     bg: isDark ? "#000000" : "#faf6f1",
@@ -36,10 +60,19 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
     textMuted: isDark ? "#a1a1aa" : "#78716c",
     border: isDark ? "#27272a" : "#e7e5e4",
     primary: "#c73636",
+    danger: "#ef4444",
   };
 
   const [selectedPost, setSelectedPost] = useState<any>(null);
   const [commentText, setCommentText] = useState("");
+  const [editingComment, setEditingComment] = useState<any>(null);
+
+  // Estados de Denúncia
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [postToReport, setPostToReport] = useState<any>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportImage, setReportImage] = useState<string | null>(null);
+  const [isReporting, setIsReporting] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0.4)).current;
 
@@ -92,14 +125,23 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
 
   const toggleFriendshipMutation = useMutation({
     mutationFn: async () => {
-      if (isFriend || isPending) {
+      // Se já são amigos, o clique serve para desfazer a amizade
+      if (isFriend) {
         const relationshipId = statusData?.id;
-        if (relationshipId) {
-          return api.delete(`/friends/${relationshipId}`);
-        }
-        return api.delete(`/friends/${userId}`);
+        return api.delete(`/friends/${relationshipId || userId}`);
       }
-      return api.post("/friends/request", { friendId: userId });
+
+      try {
+        // Envia o pedido. O Backend aceita sozinho se o outro utilizador já tiver enviado!
+        return await api.post("/friends/request", { friendId: userId });
+      } catch (error: any) {
+        // Se der Conflito (409), significa que a solicitação pendente fomos NÓS que enviamos.
+        // Logo, clicar no botão de novo deve CANCELAR a nossa solicitação.
+        if (error.response?.status === 409 && statusData?.id) {
+          return api.delete(`/friends/${statusData.id}`);
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["friendship", userId] });
@@ -168,6 +210,25 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
     },
   });
 
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) =>
+      api.delete(`/posts/comments/${commentId}`),
+    onSuccess: () => {
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", userId] });
+    },
+  });
+
+  const editCommentMutation = useMutation({
+    mutationFn: (data: { id: string; content: string }) =>
+      api.patch(`/posts/comments/${data.id}`, { content: data.content }),
+    onSuccess: () => {
+      setCommentText("");
+      setEditingComment(null);
+      refetchComments();
+    },
+  });
+
   const handleSendMessage = async () => {
     try {
       const res = await api.post(`/chats/private/${userId}`);
@@ -177,6 +238,52 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
       });
     } catch {
       Alert.alert("Erro", "Erro ao abrir chat");
+    }
+  };
+
+  const uploadImageAsync = async (uri: string) => {
+    try {
+      const formData = new FormData();
+      const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      // @ts-ignore
+      formData.append("file", {
+        uri,
+        name: filename,
+        type: match ? `image/${match[1]}` : "image/jpeg",
+      });
+      const res = await api.post("/uploads/chat-content", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.url;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleReportPost = async () => {
+    if (!reportReason.trim())
+      return Alert.alert("Atenção", "Preencha o motivo da denúncia.");
+    setIsReporting(true);
+    let finalImage = reportImage;
+    if (reportImage && reportImage.startsWith("file://"))
+      finalImage = await uploadImageAsync(reportImage);
+    try {
+      await api.post("/reports", {
+        postId: postToReport.id,
+        reportedUserId: postToReport.user.id,
+        reason: reportReason,
+        imageUrl: finalImage,
+      });
+      Alert.alert("Sucesso", "A denúncia foi enviada para análise.");
+      setReportModalVisible(false);
+      setReportReason("");
+      setReportImage(null);
+      setPostToReport(null);
+    } catch {
+      Alert.alert("Erro", "Erro ao denunciar.");
+    } finally {
+      setIsReporting(false);
     }
   };
 
@@ -307,16 +414,19 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
                       Posts
                     </Text>
                   </View>
-                  <View style={styles.statBox}>
+                  <TouchableOpacity
+                    style={styles.statBox}
+                    onPress={() => setClickOpenAchievements(Date.now())}
+                  >
                     <Text style={[styles.statNumber, { color: theme.text }]}>
-                      {userData?.achievements?.length || 0}
+                      {obtainedAchCount}
                     </Text>
                     <Text
                       style={[styles.statLabel, { color: theme.textMuted }]}
                     >
-                      Troféus
+                      Conquistas
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -364,7 +474,7 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
                         {isFriend
                           ? "Deixar de seguir"
                           : isPending
-                            ? "Solicitado"
+                            ? "Pendente"
                             : "Seguir"}
                       </Text>
                     )}
@@ -384,6 +494,14 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
                     </Text>
                   </TouchableOpacity>
                 </View>
+              )}
+
+              {userData?.id && (
+                <AchievementsHighlights
+                  userId={userData.id}
+                  isOwnProfile={false}
+                  triggerOpenAll={clickOpenAchievements} // <-- PASSE O GATILHO AQUI
+                />
               )}
             </>
           )}
@@ -439,8 +557,10 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
         )}
       </ScrollView>
 
+      {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
       <Modal visible={!!selectedPost} animationType="slide">
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
         >
           <View
@@ -454,7 +574,16 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
             >
               Post
             </Text>
-            <View style={{ width: 24 }} />
+            <View style={{ flexDirection: "row", gap: 15 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setPostToReport(selectedPost);
+                  setReportModalVisible(true);
+                }}
+              >
+                <AlertTriangle size={20} color={theme.textMuted} />
+              </TouchableOpacity>
+            </View>
           </View>
           <FlatList
             data={commentsData?.data || []}
@@ -524,58 +653,261 @@ export default function PlayerProfileScreen({ route, navigation }: any) {
             )}
             renderItem={({ item }: any) => (
               <View style={styles.commentItem}>
-                <Image
-                  source={{
-                    uri:
-                      item.user.avatarUrl ||
-                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedPost(null);
+                    navigation.navigate("PlayerProfile", {
+                      userId: item.user.id,
+                    });
                   }}
-                  style={styles.commentAvatar}
-                />
-                <View style={{ flex: 1 }}>
+                >
+                  <Image
+                    source={{
+                      uri:
+                        item.user.avatarUrl ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                    }}
+                    style={styles.commentAvatar}
+                  />
+                </TouchableOpacity>
+
+                <View style={{ flex: 1, justifyContent: "center" }}>
                   <Text style={{ color: theme.text }}>
-                    <Text style={{ fontWeight: "bold" }}>
+                    <Text
+                      style={{ fontWeight: "bold" }}
+                      onPress={() => {
+                        setSelectedPost(null);
+                        navigation.navigate("PlayerProfile", {
+                          userId: item.user.id,
+                        });
+                      }}
+                    >
                       {item.user.nickname || item.user.name}{" "}
                     </Text>
                     {item.content}
                   </Text>
                 </View>
+
+                {/* Ícones de Editar e Apagar aparecem apenas para o dono do comentário */}
+                {item.user.id === currentUser?.id && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      marginLeft: 10,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingComment(item);
+                        setCommentText(item.content);
+                      }}
+                    >
+                      <Pencil size={16} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert(
+                          "Apagar",
+                          "Deseja apagar este comentário?",
+                          [
+                            { text: "Cancelar", style: "cancel" },
+                            {
+                              text: "Apagar",
+                              style: "destructive",
+                              onPress: () =>
+                                deleteCommentMutation.mutate(item.id),
+                            },
+                          ],
+                        );
+                      }}
+                    >
+                      <Trash2 size={16} color={theme.danger} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
           />
+
+          <View>
+            {editingComment && (
+              <View
+                style={{
+                  backgroundColor: "rgba(199,54,54,0.1)",
+                  padding: 10,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.primary,
+                    fontWeight: "bold",
+                    fontSize: 12,
+                  }}
+                >
+                  Editando comentário...
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditingComment(null);
+                    setCommentText("");
+                  }}
+                >
+                  <X size={16} color={theme.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.commentInputContainer,
+                {
+                  backgroundColor: theme.surface,
+                  borderTopColor: theme.border,
+                  paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 15,
+                },
+              ]}
+            >
+              <Image
+                source={{
+                  uri:
+                    currentUser?.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${currentUser?.name}`,
+                }}
+                style={styles.commentInputAvatar}
+              />
+              <TextInput
+                style={[styles.commentInput, { color: theme.text }]}
+                placeholder="Adicione um comentário..."
+                placeholderTextColor={theme.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+              />
+              <TouchableOpacity
+                disabled={
+                  !commentText.trim() ||
+                  commentMutation.isPending ||
+                  editCommentMutation.isPending
+                }
+                onPress={() => {
+                  if (editingComment) {
+                    editCommentMutation.mutate({
+                      id: editingComment.id,
+                      content: commentText.trim(),
+                    });
+                  } else {
+                    commentMutation.mutate(commentText.trim());
+                  }
+                }}
+              >
+                {commentMutation.isPending || editCommentMutation.isPending ? (
+                  <ActivityIndicator color={theme.primary} size="small" />
+                ) : (
+                  <Text
+                    style={{
+                      color: commentText.trim()
+                        ? theme.primary
+                        : theme.textMuted,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {editingComment ? "Salvar" : "Publicar"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* MODAL DE DENÚNCIA */}
+      <Modal visible={reportModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
           <View
-            style={[
-              styles.commentInputContainer,
-              {
-                backgroundColor: theme.surface,
-                borderTopColor: theme.border,
-                paddingBottom: insets.bottom + 8,
-              },
-            ]}
+            style={[styles.reportContainer, { backgroundColor: theme.surface }]}
           >
-            <Image
-              source={{
-                uri:
-                  currentUser?.avatarUrl ||
-                  `https://api.dicebear.com/7.x/initials/svg?seed=${currentUser?.name}`,
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 15,
               }}
-              style={styles.commentInputAvatar}
-            />
+            >
+              <Text
+                style={{ fontSize: 18, fontWeight: "bold", color: theme.text }}
+              >
+                Denunciar Post
+              </Text>
+              <TouchableOpacity onPress={() => setReportModalVisible(false)}>
+                <X color={theme.text} size={24} />
+              </TouchableOpacity>
+            </View>
             <TextInput
-              style={[styles.commentInput, { color: theme.text }]}
-              placeholder="Adicione um comentário..."
+              style={[
+                styles.reportInput,
+                { color: theme.text, borderColor: theme.border },
+              ]}
+              placeholder="Qual o motivo da denúncia?"
               placeholderTextColor={theme.textMuted}
-              value={commentText}
-              onChangeText={setCommentText}
+              value={reportReason}
+              onChangeText={setReportReason}
+              multiline
             />
             <TouchableOpacity
-              onPress={() =>
-                commentText.trim() && commentMutation.mutate(commentText)
-              }
+              style={styles.addPhotoBtn}
+              onPress={async () => {
+                const res = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ["images"],
+                  quality: 0.5,
+                });
+                if (!res.canceled) setReportImage(res.assets[0].uri);
+              }}
             >
-              <Text style={{ color: theme.primary, fontWeight: "bold" }}>
-                Publicar
+              <Camera color={theme.primary} size={20} />
+              <Text
+                style={{
+                  color: theme.primary,
+                  marginLeft: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Anexar Prova (Opcional)
               </Text>
+            </TouchableOpacity>
+
+            {reportImage && (
+              <Image
+                source={{ uri: reportImage }}
+                style={{
+                  width: 100,
+                  height: 100,
+                  marginTop: 10,
+                  borderRadius: 8,
+                }}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.submitReportBtn,
+                { backgroundColor: theme.primary },
+              ]}
+              onPress={handleReportPost}
+              disabled={isReporting}
+            >
+              {isReporting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}
+                >
+                  Enviar Denúncia
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -666,4 +998,38 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   commentInput: { flex: 1, height: 40 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  reportContainer: {
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  reportInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  addPhotoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    backgroundColor: "rgba(199,54,54,0.1)",
+    borderRadius: 12,
+    marginTop: 15,
+    alignSelf: "flex-start",
+  },
+  submitReportBtn: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+    flexDirection: "row",
+    justifyContent: "center",
+  },
 });

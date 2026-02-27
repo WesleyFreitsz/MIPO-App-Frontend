@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,9 @@ import {
   TextInput,
   Alert,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
 import {
   Heart,
@@ -34,8 +37,9 @@ import { api } from "../services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWebSocketChat } from "../hooks/useWebSocketChat";
+import { useFocusEffect } from "@react-navigation/native";
 
-export default function SocialScreen({ navigation }: any) {
+export default function SocialScreen({ navigation, route }: any) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const scheme = useColorScheme();
@@ -45,7 +49,7 @@ export default function SocialScreen({ navigation }: any) {
 
   const theme = {
     bg: isDark ? "#000000" : "#faf6f1",
-    surface: isDark ? "#121212" : "#ffffff",
+    surface: isDark ? "#050000" : "#ffffff",
     text: isDark ? "#ffffff" : "#1c1917",
     textMuted: isDark ? "#a1a1aa" : "#78716c",
     border: isDark ? "#27272a" : "#e7e5e4",
@@ -64,6 +68,12 @@ export default function SocialScreen({ navigation }: any) {
   }, [socket, queryClient]);
 
   const [activeTab, setActiveTab] = useState("feed");
+
+  // NOVO: Estado para o filtro de chats
+  const [chatFilter, setChatFilter] = useState<"ALL" | "PRIVATE" | "GROUPS">(
+    "ALL",
+  );
+
   const [createPostModal, setCreatePostModal] = useState(false);
   const [newChatModal, setNewChatModal] = useState(false);
   const [addFriendsModal, setAddFriendsModal] = useState(false);
@@ -78,9 +88,33 @@ export default function SocialScreen({ navigation }: any) {
   const [reportReason, setReportReason] = useState("");
   const [reportImage, setReportImage] = useState<string | null>(null);
   const [isReporting, setIsReporting] = useState(false);
-
-  // ESTADO PARA EDIÇÃO
   const [editingPost, setEditingPost] = useState<any>(null);
+  const [editingComment, setEditingComment] = useState<any>(null); // <--- NOVO
+
+  useEffect(() => {
+    if (route?.params?.postId) {
+      setActiveTab("feed"); // Garante que a aba certa está ativa
+
+      api
+        .get(`/posts/${route.params.postId}`)
+        .then((res) => {
+          if (res.data) setSelectedPost(res.data); // Abre o modal
+        })
+        .catch((error) => {
+          console.error(error);
+          Alert.alert(
+            "Aviso",
+            "Este post não está mais disponível ou foi apagado.",
+          );
+        })
+        .finally(() => {
+          // ATRASO NECESSÁRIO: Dá tempo do Modal abrir antes de limpar os parâmetros da rota
+          setTimeout(() => {
+            navigation.setParams({ postId: undefined, t: undefined });
+          }, 500);
+        });
+    }
+  }, [route.params, navigation]);
 
   const fadeAnim = useRef(new Animated.Value(0.4)).current;
 
@@ -142,12 +176,12 @@ export default function SocialScreen({ navigation }: any) {
       0,
     ) || 0;
 
-  // MUTATION PARA DELETAR POST
   const deletePostMutation = useMutation({
     mutationFn: (postId: string) => api.delete(`/posts/${postId}`),
     onSuccess: () => {
       Alert.alert("Sucesso", "Post removido.");
       queryClient.invalidateQueries({ queryKey: ["posts"] });
+      setSelectedPost(null);
     },
     onError: () => Alert.alert("Erro", "Não foi possível excluir o post."),
   });
@@ -160,7 +194,6 @@ export default function SocialScreen({ navigation }: any) {
     onMutate: async (post) => {
       await queryClient.cancelQueries({ queryKey: ["posts"] });
       const previousFeed = queryClient.getQueryData(["posts", "feed"]);
-
       queryClient.setQueryData(["posts", "feed"], (old: any) => {
         if (!old) return old;
         return {
@@ -176,7 +209,6 @@ export default function SocialScreen({ navigation }: any) {
           ),
         };
       });
-
       if (selectedPost?.id === post.id) {
         setSelectedPost((prev: any) => ({
           ...prev,
@@ -201,6 +233,25 @@ export default function SocialScreen({ navigation }: any) {
       setCommentText("");
       refetchComments();
       queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) =>
+      api.delete(`/posts/comments/${commentId}`),
+    onSuccess: () => {
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const editCommentMutation = useMutation({
+    mutationFn: (data: { id: string; content: string }) =>
+      api.patch(`/posts/comments/${data.id}`, { content: data.content }),
+    onSuccess: () => {
+      setCommentText("");
+      setEditingComment(null);
+      refetchComments();
     },
   });
 
@@ -248,7 +299,6 @@ export default function SocialScreen({ navigation }: any) {
   const handleCreatePost = async () => {
     if (!postContent.trim() && !postImage)
       return Alert.alert("Atenção", "Digite algo ou adicione foto.");
-
     setIsCreatingPost(true);
     let finalImage = postImage;
     if (postImage && postImage.startsWith("file://"))
@@ -268,7 +318,6 @@ export default function SocialScreen({ navigation }: any) {
         });
         Alert.alert("Sucesso", "Post criado!");
       }
-
       queryClient.invalidateQueries({ queryKey: ["posts"] });
       setPostContent("");
       setPostImage(null);
@@ -332,6 +381,16 @@ export default function SocialScreen({ navigation }: any) {
         u.name?.toLowerCase().includes(searchQuery.toLowerCase()),
     ) || [];
 
+  // Lógica de Filtro dos Chats
+  const filteredChatsList =
+    chatsData?.data?.filter((chat: any) => {
+      if (chatFilter === "ALL") return true;
+      if (chatFilter === "PRIVATE") return chat.type === "PRIVATE";
+      if (chatFilter === "GROUPS")
+        return chat.type === "GROUP" || chat.type === "EVENT";
+      return true;
+    }) || [];
+
   const renderPost = ({ item }: any) => (
     <View
       style={[
@@ -363,13 +422,12 @@ export default function SocialScreen({ navigation }: any) {
               {item.user.name}
             </Text>
             <Text style={[styles.tweetHandle, { color: theme.textMuted }]}>
+              {" "}
               @{item.user.nickname}
             </Text>
           </View>
-
           <View style={{ flexDirection: "row", gap: 15, alignItems: "center" }}>
-            {/* BOTÕES DE EDIÇÃO/EXCLUSÃO APENAS PARA O DONO */}
-            {item.user.id === user?.id && (
+            {item.user.id === user?.id ? (
               <>
                 <TouchableOpacity onPress={() => handleEditInit(item)}>
                   <Pencil size={18} color={theme.textMuted} />
@@ -378,9 +436,7 @@ export default function SocialScreen({ navigation }: any) {
                   <Trash2 size={18} color={theme.danger} />
                 </TouchableOpacity>
               </>
-            )}
-
-            {item.user.id !== user?.id && (
+            ) : (
               <TouchableOpacity
                 onPress={() => {
                   setPostToReport(item);
@@ -392,11 +448,9 @@ export default function SocialScreen({ navigation }: any) {
             )}
           </View>
         </View>
-
         <Text style={[styles.tweetText, { color: theme.text }]}>
           {item.content}
         </Text>
-
         {item.imageUrl && (
           <TouchableOpacity
             activeOpacity={0.8}
@@ -409,7 +463,6 @@ export default function SocialScreen({ navigation }: any) {
             />
           </TouchableOpacity>
         )}
-
         <View style={styles.tweetActions}>
           <TouchableOpacity
             style={styles.tweetActionBtn}
@@ -607,6 +660,98 @@ export default function SocialScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
+      {/* ABA DE FILTROS DE CHAT (Só aparece na aba de conversas) */}
+      {activeTab === "chats" && (
+        <View
+          style={[
+            styles.chatFilterContainer,
+            { borderBottomColor: theme.border },
+          ]}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 15,
+              paddingVertical: 10,
+              gap: 10,
+            }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.filterPill,
+                { borderColor: theme.border },
+                chatFilter === "ALL" && {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+              onPress={() => setChatFilter("ALL")}
+            >
+              <Text
+                style={[
+                  styles.filterPillText,
+                  { color: theme.text },
+                  chatFilter === "ALL" && { color: "#fff", fontWeight: "bold" },
+                ]}
+              >
+                Todas
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.filterPill,
+                { borderColor: theme.border },
+                chatFilter === "PRIVATE" && {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+              onPress={() => setChatFilter("PRIVATE")}
+            >
+              <Text
+                style={[
+                  styles.filterPillText,
+                  { color: theme.text },
+                  chatFilter === "PRIVATE" && {
+                    color: "#fff",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Privadas
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.filterPill,
+                { borderColor: theme.border },
+                chatFilter === "GROUPS" && {
+                  backgroundColor: theme.primary,
+                  borderColor: theme.primary,
+                },
+              ]}
+              onPress={() => setChatFilter("GROUPS")}
+            >
+              <Text
+                style={[
+                  styles.filterPillText,
+                  { color: theme.text },
+                  chatFilter === "GROUPS" && {
+                    color: "#fff",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Grupos e Eventos
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
       {activeTab === "feed" ? (
         isLoadingFeed ? (
           <View>
@@ -629,23 +774,27 @@ export default function SocialScreen({ navigation }: any) {
           <ChatSkeleton />
           <ChatSkeleton />
           <ChatSkeleton />
-          <ChatSkeleton />
         </View>
       ) : (
         <FlatList
-          data={chatsData?.data}
+          data={filteredChatsList} // Usa a lista filtrada
           keyExtractor={(i) => i.id}
           renderItem={({ item }: any) => {
             const isPrivate = item.type === "PRIVATE";
+
+            // Busca os dados do OUTRO usuário (garantindo que não é você mesmo)
             const otherMember = item.members?.find(
               (m: any) => m.userId !== user?.id,
-            );
+            )?.user;
+
+            // Define o nome e a foto com base no tipo do chat
             const title = isPrivate
-              ? otherMember?.user?.nickname || otherMember?.user?.name
+              ? otherMember?.nickname || otherMember?.name || "Usuário"
               : item.name;
-            const avatar = isPrivate
-              ? otherMember?.user?.avatarUrl
-              : item.imageUrl;
+
+            const avatar = isPrivate ? otherMember?.avatarUrl : item.imageUrl;
+
+            const targetId = isPrivate ? otherMember?.id : item.id;
 
             return (
               <TouchableOpacity
@@ -655,8 +804,8 @@ export default function SocialScreen({ navigation }: any) {
                     chatId: item.id,
                     name: title,
                     type: item.type,
-                    avatar,
-                    targetId: isPrivate ? otherMember?.userId : item.id,
+                    avatar: avatar,
+                    targetId: targetId,
                   })
                 }
               >
@@ -701,19 +850,39 @@ export default function SocialScreen({ navigation }: any) {
                   </View>
                   <View style={styles.chatMessageRow}>
                     <Text
-                      style={[styles.chatLastMsg, { color: theme.textMuted }]}
+                      style={[
+                        styles.chatLastMsg,
+                        {
+                          color:
+                            item.unreadCount > 0 ? theme.text : theme.textMuted,
+                          fontWeight: item.unreadCount > 0 ? "bold" : "normal",
+                        },
+                      ]}
                       numberOfLines={1}
                     >
                       {item.lastMessage?.content || "Nenhuma mensagem"}
                     </Text>
+
                     {item.unreadCount > 0 && (
                       <View
-                        style={[
-                          styles.unreadBadge,
-                          { backgroundColor: theme.primary },
-                        ]}
+                        style={{
+                          backgroundColor: theme.primary,
+                          borderRadius: 12,
+                          minWidth: 24,
+                          height: 24,
+                          justifyContent: "center",
+                          alignItems: "center",
+                          paddingHorizontal: 6,
+                          marginLeft: 10,
+                        }}
                       >
-                        <Text style={styles.unreadText}>
+                        <Text
+                          style={{
+                            color: "#fff",
+                            fontSize: 12,
+                            fontWeight: "bold",
+                          }}
+                        >
                           {item.unreadCount}
                         </Text>
                       </View>
@@ -770,7 +939,7 @@ export default function SocialScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-      {/* MODAL CRIAR/EDITAR POST */}
+      {/* MODAIS: CREATE/EDIT POST, ADD FRIENDS, NEW CHAT, POST FULL VIEW */}
       <Modal visible={createPostModal} animationType="slide">
         <View
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
@@ -856,9 +1025,10 @@ export default function SocialScreen({ navigation }: any) {
         </View>
       </Modal>
 
-      {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
+      {/* MODAL DO POST COM KEYBOARD AVOIDING VIEW */}
       <Modal visible={!!selectedPost} animationType="slide">
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
         >
           <View
@@ -872,17 +1042,26 @@ export default function SocialScreen({ navigation }: any) {
             >
               Post
             </Text>
-            {selectedPost?.user?.id === user?.id && (
-              <TouchableOpacity
-                onPress={() => {
-                  const p = selectedPost;
-                  setSelectedPost(null);
-                  handleEditInit(p);
-                }}
-              >
-                <Pencil size={20} color={theme.textMuted} />
-              </TouchableOpacity>
-            )}
+            <View style={{ flexDirection: "row", gap: 15 }}>
+              {selectedPost?.user?.id === user?.id && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const p = selectedPost;
+                      setSelectedPost(null);
+                      handleEditInit(p);
+                    }}
+                  >
+                    <Pencil size={20} color={theme.textMuted} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => confirmDelete(selectedPost.id)}
+                  >
+                    <Trash2 size={20} color={theme.danger} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
           <FlatList
             data={commentsData?.data || []}
@@ -961,64 +1140,333 @@ export default function SocialScreen({ navigation }: any) {
             )}
             renderItem={({ item }: any) => (
               <View style={styles.commentItem}>
-                <Image
-                  source={{
-                    uri:
-                      item.user.avatarUrl ||
-                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedPost(null);
+                    navigation.navigate("PlayerProfile", {
+                      userId: item.user.id,
+                    });
                   }}
-                  style={styles.commentAvatar}
-                />
-                <View style={{ flex: 1 }}>
+                >
+                  <Image
+                    source={{
+                      uri:
+                        item.user.avatarUrl ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                    }}
+                    style={styles.commentAvatar}
+                  />
+                </TouchableOpacity>
+
+                <View style={{ flex: 1, justifyContent: "center" }}>
                   <Text style={{ color: theme.text }}>
-                    <Text style={{ fontWeight: "bold" }}>
+                    <Text
+                      style={{ fontWeight: "bold" }}
+                      onPress={() => {
+                        setSelectedPost(null);
+                        navigation.navigate("PlayerProfile", {
+                          userId: item.user.id,
+                        });
+                      }}
+                    >
                       {item.user.nickname || item.user.name}{" "}
                     </Text>
                     {item.content}
                   </Text>
                 </View>
+
+                {/* Ícones de Editar e Apagar aparecem apenas para o dono do comentário */}
+                {item.user.id === user?.id && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      marginLeft: 10,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingComment(item);
+                        setCommentText(item.content);
+                      }}
+                    >
+                      <Pencil size={16} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert(
+                          "Apagar",
+                          "Deseja apagar este comentário?",
+                          [
+                            { text: "Cancelar", style: "cancel" },
+                            {
+                              text: "Apagar",
+                              style: "destructive",
+                              onPress: () =>
+                                deleteCommentMutation.mutate(item.id),
+                            },
+                          ],
+                        );
+                      }}
+                    >
+                      <Trash2 size={16} color={theme.danger} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
           />
+          <View>
+            {/* BANNER DE EDIÇÃO DE COMENTÁRIO */}
+            {editingComment && (
+              <View
+                style={{
+                  backgroundColor: "rgba(199,54,54,0.1)",
+                  padding: 10,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.primary,
+                    fontWeight: "bold",
+                    fontSize: 12,
+                  }}
+                >
+                  Editando comentário...
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditingComment(null);
+                    setCommentText("");
+                  }}
+                >
+                  <X size={16} color={theme.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.commentInputContainer,
+                {
+                  backgroundColor: theme.surface,
+                  borderTopColor: theme.border,
+                  paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 15,
+                },
+              ]}
+            >
+              <Image
+                source={{
+                  uri:
+                    user?.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+                }}
+                style={styles.commentInputAvatar}
+              />
+              <TextInput
+                style={[styles.commentInput, { color: theme.text }]}
+                placeholder="Adicione um comentário..."
+                placeholderTextColor={theme.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+              />
+              {/* TRATAMENTO DE DUPLO CLIQUE E EDIÇÃO */}
+              <TouchableOpacity
+                disabled={
+                  !commentText.trim() ||
+                  commentMutation.isPending ||
+                  editCommentMutation.isPending
+                }
+                onPress={() => {
+                  if (editingComment) {
+                    editCommentMutation.mutate({
+                      id: editingComment.id,
+                      content: commentText.trim(),
+                    });
+                  } else {
+                    commentMutation.mutate(commentText.trim());
+                  }
+                }}
+              >
+                {commentMutation.isPending || editCommentMutation.isPending ? (
+                  <ActivityIndicator color={theme.primary} size="small" />
+                ) : (
+                  <Text
+                    style={{
+                      color: commentText.trim()
+                        ? theme.primary
+                        : theme.textMuted,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {editingComment ? "Salvar" : "Publicar"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* MODAL DE DENÚNCIA RESTAURADO */}
+      <Modal visible={reportModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
           <View
-            style={[
-              styles.commentInputContainer,
-              {
-                backgroundColor: theme.surface,
-                borderTopColor: theme.border,
-                paddingBottom: insets.bottom + 8,
-              },
-            ]}
+            style={[styles.reportContainer, { backgroundColor: theme.surface }]}
           >
-            <Image
-              source={{
-                uri:
-                  user?.avatarUrl ||
-                  `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 15,
               }}
-              style={styles.commentInputAvatar}
-            />
+            >
+              <Text
+                style={{ fontSize: 18, fontWeight: "bold", color: theme.text }}
+              >
+                Denunciar Post
+              </Text>
+              <TouchableOpacity onPress={() => setReportModalVisible(false)}>
+                <X color={theme.text} size={24} />
+              </TouchableOpacity>
+            </View>
             <TextInput
-              style={[styles.commentInput, { color: theme.text }]}
-              placeholder="Adicione um comentário..."
+              style={[
+                styles.reportInput,
+                { color: theme.text, borderColor: theme.border },
+              ]}
+              placeholder="Qual o motivo da denúncia?"
               placeholderTextColor={theme.textMuted}
-              value={commentText}
-              onChangeText={setCommentText}
+              value={reportReason}
+              onChangeText={setReportReason}
+              multiline
             />
             <TouchableOpacity
-              onPress={() =>
-                commentText.trim() && commentMutation.mutate(commentText)
-              }
+              style={styles.addPhotoBtn}
+              onPress={async () => {
+                const res = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ["images"],
+                  quality: 0.5,
+                });
+                if (!res.canceled) setReportImage(res.assets[0].uri);
+              }}
             >
-              <Text style={{ color: theme.primary, fontWeight: "bold" }}>
-                Publicar
+              <Camera color={theme.primary} size={20} />
+              <Text
+                style={{
+                  color: theme.primary,
+                  marginLeft: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Anexar Prova (Opcional)
               </Text>
+            </TouchableOpacity>
+
+            {reportImage && (
+              <Image
+                source={{ uri: reportImage }}
+                style={{
+                  width: 100,
+                  height: 100,
+                  marginTop: 10,
+                  borderRadius: 8,
+                }}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.submitReportBtn,
+                { backgroundColor: theme.primary },
+              ]}
+              onPress={handleReportPost}
+              disabled={isReporting}
+            >
+              {isReporting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}
+                >
+                  Enviar Denúncia
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL ADD AMIGOS E NOVO CHAT (SKELETONS E COMPONENTES IGUAIS) */}
+      <Modal visible={newChatModal} animationType="slide">
+        <View
+          style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
+        >
+          <View
+            style={[
+              styles.modalHeader,
+              {
+                borderBottomColor: theme.border,
+                backgroundColor: theme.surface,
+              },
+            ]}
+          >
+            <TouchableOpacity onPress={() => setNewChatModal(false)}>
+              <X color={theme.text} size={24} />
+            </TouchableOpacity>
+            <Text
+              style={{ fontSize: 16, fontWeight: "bold", color: theme.text }}
+            >
+              Nova Conversa
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <TouchableOpacity
+            style={styles.newGroupBtn}
+            onPress={() => {
+              setNewChatModal(false);
+              navigation.navigate("CreateChatGroup");
+            }}
+          >
+            <View
+              style={[styles.iconCircle, { backgroundColor: theme.primary }]}
+            >
+              <Users color="#fff" size={20} />
+            </View>
+            <Text
+              style={{ color: theme.text, fontSize: 16, fontWeight: "bold" }}
+            >
+              Novo Grupo
+            </Text>
+          </TouchableOpacity>
+          <FlatList
+            data={friendsData?.data}
+            keyExtractor={(i) => i.id}
+            renderItem={({ item }: any) => (
+              <TouchableOpacity
+                style={styles.friendCard}
+                onPress={() => createPrivateChatMutation.mutate(item.id)}
+              >
+                <Image
+                  source={{
+                    uri:
+                      item.avatarUrl ||
+                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`,
+                  }}
+                  style={styles.chatAvatar}
+                />
+                <Text style={{ color: theme.text, fontWeight: "bold" }}>
+                  {item.nickname || item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </Modal>
+
       <Modal visible={addFriendsModal} animationType="slide">
         <View
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
@@ -1120,6 +1568,19 @@ const styles = StyleSheet.create({
     height: 4,
     width: 60,
     borderRadius: 2,
+  },
+  chatFilterContainer: {
+    borderBottomWidth: 1,
+  },
+  filterPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: "transparent",
+  },
+  filterPillText: {
+    fontSize: 14,
   },
   tweetCard: {
     flexDirection: "row",

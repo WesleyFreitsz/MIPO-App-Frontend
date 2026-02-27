@@ -13,6 +13,8 @@ import {
   useColorScheme,
   Modal,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -29,10 +31,13 @@ import {
   FileText,
   User as UserIcon,
   MessageSquare,
+  Pencil,
+  Trash2,
 } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import AchievementsHighlights from "./components/AchievementsHighlights";
 
 export default function ProfileScreen({ route, navigation }: any) {
   const { user, signOut, refreshUser } = useAuth();
@@ -40,6 +45,16 @@ export default function ProfileScreen({ route, navigation }: any) {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
   const insets = useSafeAreaInsets();
+  const triggerOpenAchievements = route?.params?.openAchievements;
+  const [clickOpenAchievements, setClickOpenAchievements] = useState(0);
+
+  useEffect(() => {
+    if (triggerOpenAchievements) {
+      setTimeout(() => {
+        navigation.setParams({ openAchievements: undefined });
+      }, 500);
+    }
+  }, [triggerOpenAchievements, navigation]);
 
   const theme = {
     bg: isDark ? "#000000" : "#faf6f1",
@@ -48,6 +63,7 @@ export default function ProfileScreen({ route, navigation }: any) {
     textMuted: isDark ? "#a1a1aa" : "#78716c",
     border: isDark ? "#27272a" : "#e7e5e4",
     primary: "#c73636",
+    danger: "#ef4444",
   };
 
   const [editMode, setEditMode] = useState(route?.params?.editMode || false);
@@ -61,6 +77,7 @@ export default function ProfileScreen({ route, navigation }: any) {
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<any>(null);
   const [commentText, setCommentText] = useState("");
+  const [editingComment, setEditingComment] = useState<any>(null);
 
   const fadeAnim = useRef(new Animated.Value(0.4)).current;
 
@@ -163,6 +180,37 @@ export default function ProfileScreen({ route, navigation }: any) {
     },
   });
 
+  const { data: achievementsData = [] } = useQuery({
+    queryKey: ["achievements", user?.id],
+    queryFn: async () =>
+      (await api.get(`/achievements?userId=${user?.id}`)).data,
+    enabled: !!user?.id,
+  });
+
+  // Filtra apenas as que foram obtidas
+  const obtainedAchCount = achievementsData.filter(
+    (a: any) => a.isObtained,
+  ).length;
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) =>
+      api.delete(`/posts/comments/${commentId}`),
+    onSuccess: () => {
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["posts", "user", user?.id] });
+    },
+  });
+
+  const editCommentMutation = useMutation({
+    mutationFn: (data: { id: string; content: string }) =>
+      api.patch(`/posts/comments/${data.id}`, { content: data.content }),
+    onSuccess: () => {
+      setCommentText("");
+      setEditingComment(null);
+      refetchComments();
+    },
+  });
+
   const createPrivateChatMutation = useMutation({
     mutationFn: (friendId: string) => api.post(`/chats/private/${friendId}`),
     onSuccess: (res) => {
@@ -187,7 +235,6 @@ export default function ProfileScreen({ route, navigation }: any) {
         name: filename,
         type: match ? `image/${match[1]}` : "image/jpeg",
       });
-      // PERFIL É SEMPRE /uploads/avatar
       const res = await api.post("/uploads/avatar", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -308,14 +355,17 @@ export default function ProfileScreen({ route, navigation }: any) {
                   Amigos
                 </Text>
               </TouchableOpacity>
-              <View style={styles.statBox}>
+              <TouchableOpacity
+                style={styles.statBox}
+                onPress={() => setClickOpenAchievements(Date.now())}
+              >
                 <Text style={[styles.statNumber, { color: theme.text }]}>
-                  {user?.achievements?.length || 0}
+                  {obtainedAchCount}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.textMuted }]}>
-                  Troféus
+                  Conquistas
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -455,44 +505,15 @@ export default function ProfileScreen({ route, navigation }: any) {
               </View>
             </>
           )}
-
-          <View style={styles.achievementsSection}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              🏆 Minhas Conquistas
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 10 }}
-            >
-              {user?.achievements?.length && user.achievements.length > 0 ? (
-                user.achievements.map((ach: any) => (
-                  <View
-                    key={ach.id}
-                    style={[
-                      styles.achievementBadge,
-                      { backgroundColor: theme.surface },
-                    ]}
-                  >
-                    <Text style={styles.achievementIcon}>
-                      {ach.icon || "🏅"}
-                    </Text>
-                    <Text
-                      style={[styles.achievementTitle, { color: theme.text }]}
-                      numberOfLines={1}
-                    >
-                      {ach.title}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={{ color: theme.textMuted }}>
-                  Nenhuma conquista ainda. Jogue para ganhar!
-                </Text>
-              )}
-            </ScrollView>
-          </View>
         </View>
+
+        {user?.id && (
+          <AchievementsHighlights
+            triggerOpenAll={triggerOpenAchievements || clickOpenAchievements}
+            userId={user.id}
+            isOwnProfile={true}
+          />
+        )}
 
         {isLoadingPosts ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
@@ -598,9 +619,10 @@ export default function ProfileScreen({ route, navigation }: any) {
         </View>
       </Modal>
 
-      {/* MODAL POST TELA CHEIA E COMENTÁRIOS */}
+      {/* MODAL POST TELA CHEIA E COMENTÁRIOS COM KEYBOARD AVOIDING VIEW */}
       <Modal visible={!!selectedPost} animationType="slide">
-        <View
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}
         >
           <View
@@ -614,6 +636,7 @@ export default function ProfileScreen({ route, navigation }: any) {
             >
               Post
             </Text>
+
             <View style={{ width: 24 }} />
           </View>
           <FlatList
@@ -684,61 +707,175 @@ export default function ProfileScreen({ route, navigation }: any) {
             )}
             renderItem={({ item }: any) => (
               <View style={styles.commentItem}>
-                <Image
-                  source={{
-                    uri:
-                      item.user.avatarUrl ||
-                      `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedPost(null);
+                    navigation.navigate("PlayerProfile", {
+                      userId: item.user.id,
+                    });
                   }}
-                  style={styles.commentAvatar}
-                />
-                <View style={{ flex: 1 }}>
+                >
+                  <Image
+                    source={{
+                      uri:
+                        item.user.avatarUrl ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${item.user.name}`,
+                    }}
+                    style={styles.commentAvatar}
+                  />
+                </TouchableOpacity>
+
+                <View style={{ flex: 1, justifyContent: "center" }}>
                   <Text style={{ color: theme.text }}>
-                    <Text style={{ fontWeight: "bold" }}>
+                    <Text
+                      style={{ fontWeight: "bold" }}
+                      onPress={() => {
+                        setSelectedPost(null);
+                        navigation.navigate("PlayerProfile", {
+                          userId: item.user.id,
+                        });
+                      }}
+                    >
                       {item.user.nickname || item.user.name}{" "}
                     </Text>
                     {item.content}
                   </Text>
                 </View>
+
+                {/* Ícones de Editar e Apagar aparecem apenas para o dono do comentário */}
+                {item.user.id === user?.id && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      marginLeft: 10,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingComment(item);
+                        setCommentText(item.content);
+                      }}
+                    >
+                      <Pencil size={16} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert(
+                          "Apagar",
+                          "Deseja apagar este comentário?",
+                          [
+                            { text: "Cancelar", style: "cancel" },
+                            {
+                              text: "Apagar",
+                              style: "destructive",
+                              onPress: () =>
+                                deleteCommentMutation.mutate(item.id),
+                            },
+                          ],
+                        );
+                      }}
+                    >
+                      <Trash2 size={16} color={theme.danger} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
           />
-          <View
-            style={[
-              styles.commentInputContainer,
-              {
-                backgroundColor: theme.surface,
-                borderTopColor: theme.border,
-                paddingBottom: insets.bottom + 8,
-              },
-            ]}
-          >
-            <Image
-              source={{
-                uri:
-                  user?.avatarUrl ||
-                  `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
-              }}
-              style={styles.commentInputAvatar}
-            />
-            <TextInput
-              style={[styles.commentInput, { color: theme.text }]}
-              placeholder="Adicione um comentário..."
-              placeholderTextColor={theme.textMuted}
-              value={commentText}
-              onChangeText={setCommentText}
-            />
-            <TouchableOpacity
-              onPress={() =>
-                commentText.trim() && commentMutation.mutate(commentText)
-              }
+
+          <View>
+            {editingComment && (
+              <View
+                style={{
+                  backgroundColor: "rgba(199,54,54,0.1)",
+                  padding: 10,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.primary,
+                    fontWeight: "bold",
+                    fontSize: 12,
+                  }}
+                >
+                  Editando comentário...
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditingComment(null);
+                    setCommentText("");
+                  }}
+                >
+                  <X size={16} color={theme.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.commentInputContainer,
+                {
+                  backgroundColor: theme.surface,
+                  borderTopColor: theme.border,
+                  paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 15,
+                },
+              ]}
             >
-              <Text style={{ color: theme.primary, fontWeight: "bold" }}>
-                Publicar
-              </Text>
-            </TouchableOpacity>
+              <Image
+                source={{
+                  uri:
+                    user?.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name}`,
+                }}
+                style={styles.commentInputAvatar}
+              />
+              <TextInput
+                style={[styles.commentInput, { color: theme.text }]}
+                placeholder="Adicione um comentário..."
+                placeholderTextColor={theme.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+              />
+              <TouchableOpacity
+                disabled={
+                  !commentText.trim() ||
+                  commentMutation.isPending ||
+                  editCommentMutation.isPending
+                }
+                onPress={() => {
+                  if (editingComment) {
+                    editCommentMutation.mutate({
+                      id: editingComment.id,
+                      content: commentText.trim(),
+                    });
+                  } else {
+                    commentMutation.mutate(commentText.trim());
+                  }
+                }}
+              >
+                {commentMutation.isPending || editCommentMutation.isPending ? (
+                  <ActivityIndicator color={theme.primary} size="small" />
+                ) : (
+                  <Text
+                    style={{
+                      color: commentText.trim()
+                        ? theme.primary
+                        : theme.textMuted,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {editingComment ? "Salvar" : "Publicar"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

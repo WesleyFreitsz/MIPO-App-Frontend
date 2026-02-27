@@ -501,6 +501,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: "center",
     width: "100%",
+    marginBottom: 10,
   },
   confirmButtonText: { color: "#fff", fontWeight: "bold", fontSize: 15 },
   cancelButton: {
@@ -509,6 +510,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 15,
     alignItems: "center",
+    marginBottom: 10,
   },
   cancelButtonText: { color: "#64748b", fontWeight: "bold", fontSize: 15 },
   chatButton: {
@@ -520,6 +522,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: 8,
+    marginBottom: 10,
   },
   checkInButton: {
     backgroundColor: "#10b981",
@@ -529,6 +532,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: 8,
+    marginBottom: 10,
   },
   emptyText: {
     color: "#94a3b8",

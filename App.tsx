@@ -71,13 +71,14 @@ function TabNavigator() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
-  // Busca global para os Badges
+  // Busca global para os Badges de Chats
   const { data: chatsData } = useQuery({
     queryKey: ["chats"],
     queryFn: async () => (await api.get("/chats")).data,
     refetchInterval: 5000,
   });
 
+  // Busca global para os Badges de Avisos
   const { data: notifsData } = useQuery({
     queryKey: ["notifications"],
     queryFn: async () =>
@@ -85,9 +86,21 @@ function TabNavigator() {
     refetchInterval: 5000,
   });
 
+  // Busca global para Solicitações de Amizade
+  const { data: reqsData } = useQuery({
+    queryKey: ["friendRequests", "pending_global"],
+    queryFn: async () => (await api.get("/friends/requests/pending")).data,
+    refetchInterval: 5000,
+  });
+
   const hasUnreadChats = chatsData?.data?.some((c: any) => c.unreadCount > 0);
   const unreadNotifsCount =
     notifsData?.data?.filter((n: any) => !n.isRead).length || 0;
+
+  // Como sua API é paginada, normalmente reqsData.data terá a lista
+  const pendingReqsCount = reqsData?.data?.length || reqsData?.length || 0;
+
+  const totalNotifications = unreadNotifsCount + pendingReqsCount;
 
   return (
     <Tab.Navigator
@@ -138,7 +151,7 @@ function TabNavigator() {
         component={SocialScreen}
         options={{
           tabBarIcon: ({ color }) => <MessageCircle color={color} size={22} />,
-          tabBarBadge: hasUnreadChats ? "" : undefined, // String vazia mostra só uma bolinha
+          tabBarBadge: hasUnreadChats ? "" : undefined,
           tabBarBadgeStyle: {
             minWidth: 10,
             maxHeight: 10,
@@ -156,12 +169,14 @@ function TabNavigator() {
           headerShown: false,
         }}
       /> */}
+
       <Tab.Screen
         name="Notificações"
         component={NotificationsScreen}
         options={{
           tabBarIcon: ({ color }) => <Bell color={color} size={22} />,
-          tabBarBadge: unreadNotifsCount > 0 ? unreadNotifsCount : undefined,
+          // Agora soma avisos E amizades para acender a bolinha vermelha!
+          tabBarBadge: totalNotifications > 0 ? totalNotifications : undefined,
           tabBarBadgeStyle: { backgroundColor: THEME.primary },
         }}
       />

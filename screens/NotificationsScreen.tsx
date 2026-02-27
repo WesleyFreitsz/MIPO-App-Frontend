@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react-native";
 import { api } from "../services/api";
-import { useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { usePushNotifications } from "../services/usePushNotifications";
 import {
   useQueryClient,
@@ -36,9 +36,15 @@ const FriendRequestCard = ({
   onReject,
   isLoading,
   theme,
+  navigation,
 }: any) => {
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.8}
+      // Ao clicar na solicitação, vai para o perfil da pessoa
+      onPress={() =>
+        navigation.navigate("PlayerProfile", { userId: request.fromUser.id })
+      }
       style={[
         styles.friendRequestCard,
         { backgroundColor: theme.surface, borderColor: theme.border },
@@ -70,7 +76,10 @@ const FriendRequestCard = ({
       <View style={styles.friendActions}>
         <TouchableOpacity
           style={[styles.acceptBtn, { backgroundColor: theme.success }]}
-          onPress={() => onAccept(request.id)}
+          onPress={(e) => {
+            e.stopPropagation();
+            onAccept(request.id);
+          }} // Impede que abra o perfil ao clicar em aceitar
           disabled={isLoading}
         >
           {isLoading ? (
@@ -81,17 +90,20 @@ const FriendRequestCard = ({
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.rejectBtn, { backgroundColor: theme.border }]}
-          onPress={() => onReject(request.id)}
+          onPress={(e) => {
+            e.stopPropagation();
+            onReject(request.id);
+          }} // Impede que abra o perfil ao clicar em recusar
           disabled={isLoading}
         >
           <X color={theme.textLighter} size={18} />
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
-const NotificationCard = ({ notification, theme }: any) => {
+const NotificationCard = ({ notification, theme, navigation }: any) => {
   const getIcon = (iconName: string) => {
     switch (iconName) {
       case "calendar":
@@ -107,8 +119,40 @@ const NotificationCard = ({ notification, theme }: any) => {
     }
   };
 
+  const handlePress = () => {
+    let data = notification.data;
+
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch (e) {}
+    }
+
+    if (!data) data = {}; // Garante que seja um objeto válido
+
+    // Debug: Olhe no console se o ID do post está vindo no Like
+    console.log("Notificação Clicada:", notification.title, "Dados:", data);
+
+    if (data.userId) {
+      navigation.navigate("PlayerProfile", { userId: data.userId });
+    } else if (data.eventId) {
+      navigation.navigate("EventsList");
+    } else if (data.postId) {
+      // Vai para a tela Social e passa um timestamp 't' novo para forçar a atualização
+      navigation.navigate("Social", { postId: data.postId, t: Date.now() });
+    } else if (
+      data.achievementId ||
+      notification.icon === "trophy" ||
+      notification.title?.toLowerCase().includes("conquista")
+    ) {
+      // Se for uma conquista, vai para a tela Perfil passando a ordem de abrir o modal
+      navigation.navigate("Perfil", { openAchievements: Date.now() });
+    }
+  };
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={handlePress}
       style={[
         styles.notifCard,
         { backgroundColor: theme.surface, borderColor: theme.border },
@@ -135,13 +179,14 @@ const NotificationCard = ({ notification, theme }: any) => {
           {notification.message}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
 export default function NotificationsScreen() {
   const [activeTab, setActiveTab] = useState("requests");
   const queryClient = useQueryClient();
+  const navigation = useNavigation<any>();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
 
@@ -160,7 +205,6 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     requestPermission();
-    // Marcar lidas ao abrir a aba
     if (activeTab === "notifications") {
       api.patch("/notifications/read-all").catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -184,7 +228,9 @@ export default function NotificationsScreen() {
       ).data,
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+      lastPage.hasMore
+        ? Number(lastPage.skip) + Number(lastPage.take)
+        : undefined,
   });
 
   const {
@@ -203,11 +249,17 @@ export default function NotificationsScreen() {
       ).data,
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+      lastPage.hasMore
+        ? Number(lastPage.skip) + Number(lastPage.take)
+        : undefined,
   });
 
   const friendRequests = reqsData?.pages.flatMap((p) => p.data) || [];
   const notifications = notifsData?.pages.flatMap((p) => p.data) || [];
+
+  // Contagem para os badges internos
+  const reqsCount = friendRequests.length;
+  const unreadNotifsCount = notifications.filter((n: any) => !n.isRead).length;
 
   const acceptFriendRequestMutation = useMutation({
     mutationFn: (friendshipId: string) =>
@@ -243,6 +295,7 @@ export default function NotificationsScreen() {
         <Text style={[styles.title, { color: theme.text }]}>Notificações</Text>
       </View>
 
+      {/* ABAS COM BOLINHAS DE NOTIFICAÇÃO INTERNAS */}
       <View
         style={[
           styles.tabContainer,
@@ -256,22 +309,33 @@ export default function NotificationsScreen() {
           ]}
           onPress={() => setActiveTab("requests")}
         >
-          <UserPlus
-            color={activeTab === "requests" ? theme.primary : theme.textLighter}
-            size={18}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              { color: theme.textLighter },
-              activeTab === "requests" && {
-                color: theme.primary,
-                fontWeight: "600",
-              },
-            ]}
-          >
-            Solicitações ({friendRequests.length})
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <UserPlus
+              color={
+                activeTab === "requests" ? theme.primary : theme.textLighter
+              }
+              size={18}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.textLighter },
+                activeTab === "requests" && {
+                  color: theme.primary,
+                  fontWeight: "600",
+                },
+              ]}
+            >
+              Solicitações
+            </Text>
+            {reqsCount > 0 && (
+              <View
+                style={[styles.innerBadge, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.innerBadgeText}>{reqsCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -283,38 +347,51 @@ export default function NotificationsScreen() {
           ]}
           onPress={() => setActiveTab("notifications")}
         >
-          <Bell
-            color={
-              activeTab === "notifications" ? theme.primary : theme.textLighter
-            }
-            size={18}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              { color: theme.textLighter },
-              activeTab === "notifications" && {
-                color: theme.primary,
-                fontWeight: "600",
-              },
-            ]}
-          >
-            Avisos
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Bell
+              color={
+                activeTab === "notifications"
+                  ? theme.primary
+                  : theme.textLighter
+              }
+              size={18}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.textLighter },
+                activeTab === "notifications" && {
+                  color: theme.primary,
+                  fontWeight: "600",
+                },
+              ]}
+            >
+              Avisos
+            </Text>
+            {unreadNotifsCount > 0 && (
+              <View
+                style={[styles.innerBadge, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.innerBadgeText}>{unreadNotifsCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
       {activeTab === "requests" && (
         <FlatList
           data={friendRequests}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: any, index: number) => `${item.id}-${index}`}
           refreshControl={
             <RefreshControl
               refreshing={isFetchingReqs && !hasNextReqs}
               onRefresh={onRefresh}
             />
           }
-          onEndReached={() => hasNextReqs && fetchNextReqs()}
+          onEndReached={() => {
+            if (hasNextReqs && !isFetchingReqs) fetchNextReqs();
+          }}
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -328,6 +405,7 @@ export default function NotificationsScreen() {
             <FriendRequestCard
               request={item}
               theme={theme}
+              navigation={navigation}
               onAccept={(id: string) => acceptFriendRequestMutation.mutate(id)}
               onReject={(id: string) => rejectFriendRequestMutation.mutate(id)}
               isLoading={
@@ -343,14 +421,16 @@ export default function NotificationsScreen() {
       {activeTab === "notifications" && (
         <FlatList
           data={notifications}
-          keyExtractor={(item: any) => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           refreshControl={
             <RefreshControl
               refreshing={isFetchingNotifs && !hasNextNotifs}
               onRefresh={onRefresh}
             />
           }
-          onEndReached={() => hasNextNotifs && fetchNextNotifs()}
+          onEndReached={() => {
+            if (hasNextNotifs && !isFetchingNotifs) fetchNextNotifs();
+          }}
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -361,7 +441,11 @@ export default function NotificationsScreen() {
             </View>
           }
           renderItem={({ item }: any) => (
-            <NotificationCard notification={item} theme={theme} />
+            <NotificationCard
+              notification={item}
+              theme={theme}
+              navigation={navigation}
+            />
           )}
           contentContainerStyle={styles.list}
         />
@@ -381,15 +465,23 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    gap: 8,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabText: { fontSize: 13, fontWeight: "500" },
+  innerBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  innerBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
   list: { padding: 16 },
   empty: { alignItems: "center", marginTop: 100 },
   emptyText: { marginTop: 10 },
