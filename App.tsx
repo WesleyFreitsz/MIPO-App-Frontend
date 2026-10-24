@@ -1,7 +1,14 @@
 import "react-native-gesture-handler";
-import React from "react";
+import React, { useEffect, useMemo } from "react";
 import { View, ActivityIndicator } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import {
+  DarkTheme,
+  DefaultTheme,
+  NavigationContainer,
+  Theme as NavigationTheme,
+} from "@react-navigation/native";
+import * as SplashScreen from "expo-splash-screen";
+import { ThemeProvider, useMipoFonts, useTheme } from "./theme";
 import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
@@ -54,21 +61,16 @@ import AdminEventsManagementScreen from "./screens/AdminEventsManagementScreen";
 import AdminReportsScreen from "./screens/AdminReportsScreen";
 import GamesListScreen from "./screens/GameListScreen";
 
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
 const queryClient = new QueryClient();
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const THEME = {
-  primary: "#c73636",
-  primaryDark: "#9f1d1d",
-  text: "#FFF",
-  textMuted: "#78716c",
-  background: "#faf6f1",
-};
-
 // Navegação por Abas (Dinâmica para User e Admin)
 function TabNavigator() {
   const { user } = useAuth();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   // Busca global para os Badges de Chats
@@ -105,24 +107,24 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: THEME.primary,
-        tabBarInactiveTintColor: THEME.textMuted,
+        tabBarActiveTintColor: colors.red,
+        tabBarInactiveTintColor: colors.muted,
         tabBarStyle: {
           height: 64 + (insets.bottom || 0),
           paddingBottom: (insets.bottom || 0) + 8,
           paddingTop: 8,
-          backgroundColor: "#fff",
+          backgroundColor: colors.surface,
           borderTopWidth: 0,
           elevation: 12,
-          shadowColor: "#000",
+          shadowColor: colors.shadow,
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.06,
           shadowRadius: 12,
         },
         tabBarLabelStyle: { fontWeight: "600", fontSize: 12 },
-        headerTitleStyle: { fontWeight: "bold", color: THEME.text },
+        headerTitleStyle: { fontWeight: "bold", color: colors.onPink },
         headerStyle: {
-          backgroundColor: THEME.primary,
+          backgroundColor: colors.red,
           elevation: 0,
           shadowOpacity: 0,
         },
@@ -156,7 +158,7 @@ function TabNavigator() {
             minWidth: 10,
             maxHeight: 10,
             borderRadius: 5,
-            backgroundColor: THEME.primary,
+            backgroundColor: colors.red,
           },
         }}
       />
@@ -177,7 +179,7 @@ function TabNavigator() {
           tabBarIcon: ({ color }) => <Bell color={color} size={22} />,
           // Agora soma avisos E amizades para acender a bolinha vermelha!
           tabBarBadge: totalNotifications > 0 ? totalNotifications : undefined,
-          tabBarBadgeStyle: { backgroundColor: THEME.primary },
+          tabBarBadgeStyle: { backgroundColor: colors.red },
         }}
       />
       <Tab.Screen
@@ -194,6 +196,7 @@ function TabNavigator() {
 
 function Routes() {
   const { user, signed, loading } = useAuth();
+  const { colors } = useTheme();
 
   if (loading) {
     return (
@@ -202,10 +205,10 @@ function Routes() {
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          backgroundColor: THEME.background,
+          backgroundColor: colors.bg,
         }}
       >
-        <ActivityIndicator size="large" color={THEME.primary} />
+        <ActivityIndicator size="large" color={colors.red} />
       </View>
     );
   }
@@ -221,11 +224,11 @@ function Routes() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: THEME.primary },
-        headerTintColor: "#fff",
+        headerStyle: { backgroundColor: colors.red },
+        headerTintColor: colors.onPink,
         headerTitleStyle: { fontWeight: "bold", fontSize: 18 },
         headerBackTitle: "",
-        cardStyle: { backgroundColor: THEME.background },
+        cardStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen
@@ -319,17 +322,51 @@ function Routes() {
   );
 }
 
+function ThemedApp() {
+  const { scheme, colors } = useTheme();
+  const fontsReady = useMipoFonts();
+
+  useEffect(() => {
+    if (fontsReady) SplashScreen.hideAsync().catch(() => undefined);
+  }, [fontsReady]);
+
+  const navigationTheme = useMemo<NavigationTheme>(() => {
+    const base = scheme === "dark" ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      dark: scheme === "dark",
+      colors: {
+        ...base.colors,
+        primary: colors.red,
+        background: colors.bg,
+        card: colors.bg,
+        text: colors.text,
+        border: colors.line,
+        notification: colors.red,
+      },
+    };
+  }, [scheme, colors]);
+
+  if (!fontsReady) return null;
+
+  return (
+    <NavigationContainer theme={navigationTheme}>
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+      <Routes />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <NavigationContainer>
-            <StatusBar style="light" />
-            <Routes />
-          </NavigationContainer>
-        </AuthProvider>
-      </QueryClientProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ThemedApp />
+          </AuthProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
