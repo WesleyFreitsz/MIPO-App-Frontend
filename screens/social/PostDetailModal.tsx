@@ -32,6 +32,7 @@ export interface PostDetailModalProps {
   onDeletePost: () => void;
   onOpenProfile: (userId: string) => void;
   onClose: () => void;
+  hidePostActions?: boolean;
 }
 
 export function PostDetailModal({
@@ -51,11 +52,12 @@ export function PostDetailModal({
   onDeletePost,
   onOpenProfile,
   onClose,
+  hidePostActions = false,
 }: PostDetailModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   if (!post) return null;
-  const isMine = post.user.id === currentUser?.id;
+  const isMine = !hidePostActions && post.user.id === currentUser?.id;
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
