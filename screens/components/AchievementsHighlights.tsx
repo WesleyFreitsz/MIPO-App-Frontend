@@ -1,70 +1,162 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Modal,
-  ScrollView,
-  Animated,
-  Alert,
-  useColorScheme,
-} from "react-native";
-import { X, Trophy, Star } from "lucide-react-native";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useEffect, useState } from "react";
+import { Alert, Image, Modal, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Lock, Star, X } from "lucide-react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../services/api";
+import {
+  BottomSheet,
+  Button,
+  Card,
+  CardTone,
+  Character,
+  CharacterMotion,
+  CharacterName,
+  Chip,
+  IconButton,
+  MipoText,
+  SCREEN_PADDING,
+  SectionHeader,
+  Skeleton,
+} from "../../components/ui";
+import { useTheme } from "../../theme/ThemeProvider";
+import { foregroundOn, stroke } from "../../theme/tokens";
 
-// --- EFEITO DE BRILHO (SHINE) ---
-const ShineEffect = () => {
-  const moveAnim = useRef(new Animated.Value(-50)).current;
+interface Raridade {
+  id?: string;
+  name: string;
+  color?: string | null;
+}
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(moveAnim, {
-        toValue: 150,
-        duration: 2500,
-        useNativeDriver: true,
-      }),
-    ).start();
-  }, [moveAnim]);
+interface Conquista {
+  id: string;
+  title: string;
+  icon?: string | null;
+  description?: string | null;
+  condition?: string | null;
+  rarity?: Raridade | null;
+  isObtained?: boolean;
+  isHighlighted?: boolean;
+  obtainedPercentage?: number | string | null;
+}
 
-  return (
-    <Animated.View
-      style={[
-        styles.shine,
-        { transform: [{ translateX: moveAnim }, { skewX: "-20deg" }] },
-      ]}
-    />
-  );
-};
+interface RaridadeGroup {
+  name: string;
+  color: string | null;
+  items: Conquista[];
+}
 
 interface Props {
   userId: string;
   isOwnProfile?: boolean;
-  triggerOpenAll?: number; // <--- ADICIONE ISTO
+  triggerOpenAll?: number;
 }
 
-export default function AchievementsHighlights({
-  userId,
-  isOwnProfile = false,
-  triggerOpenAll,
-}: Props) {
-  const queryClient = useQueryClient();
-  const scheme = useColorScheme();
-  const isDark = scheme === "dark";
+const CARD_WIDTH = 84;
+const LOCKED_OPACITY = 0.45;
+const TROFEUS: CharacterName[] = ["trofeu1", "trofeu2", "trofeu3", "trofeu4", "trofeu5", "trofeu6"];
+const DEFAULT_RARIDADE_NAME = "Padrão";
 
-  const theme = {
-    bg: isDark ? "#000000" : "#faf6f1",
-    surface: isDark ? "#121212" : "#ffffff",
-    text: isDark ? "#ffffff" : "#1c1917",
-    textMuted: isDark ? "#a1a1aa" : "#78716c",
-    border: isDark ? "#27272a" : "#e7e5e4",
-    primary: "#c73636",
-  };
+const RARIDADE_TONES: Record<string, CardTone> = {
+  comum: "neutral",
+  common: "neutral",
+  rara: "teal",
+  raro: "teal",
+  rare: "teal",
+  epica: "lime",
+  epico: "lime",
+  epic: "lime",
+  lendaria: "pink",
+  lendario: "pink",
+  legendary: "pink",
+};
+
+function normalizeRaridadeName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function raridadeTone(raridade: Raridade | null | undefined): CardTone {
+  if (!raridade?.name) return "neutral";
+  return RARIDADE_TONES[normalizeRaridadeName(raridade.name)] ?? "neutral";
+}
+
+function characterFor(conquista: Conquista, index: number): CharacterName {
+  return conquista.condition ? TROFEUS[index % TROFEUS.length] : "pocao1";
+}
+
+function groupByRaridade(conquistas: Conquista[]): RaridadeGroup[] {
+  const groups = new Map<string, RaridadeGroup>();
+  conquistas.forEach((conquista) => {
+    const name = conquista.rarity?.name || DEFAULT_RARIDADE_NAME;
+    const group = groups.get(name) ?? { name, color: conquista.rarity?.color ?? null, items: [] };
+    group.items.push(conquista);
+    groups.set(name, group);
+  });
+  return Array.from(groups.values());
+}
+
+function RaridadeDot({ color }: { color: string | null | undefined }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        borderWidth: stroke.thin,
+        borderColor: colors.line,
+        backgroundColor: color || colors.muted,
+      }}
+    />
+  );
+}
+
+interface ConquistaCardProps {
+  conquista: Conquista;
+  character: CharacterName;
+  motion: CharacterMotion;
+  dimmed: boolean;
+  onPress: () => void;
+}
+
+function ConquistaCard({ conquista, character, motion, dimmed, onPress }: ConquistaCardProps) {
+  const { colors } = useTheme();
+  const tone = raridadeTone(conquista.rarity);
+  const foreground = tone === "neutral" ? colors.text : foregroundOn(tone, colors);
+
+  return (
+    <View style={{ width: CARD_WIDTH, opacity: dimmed ? LOCKED_OPACITY : 1 }}>
+      <Card
+        tone={tone}
+        onPress={onPress}
+        accessibilityLabel={dimmed ? `${conquista.title}, bloqueada` : conquista.title}
+        contentStyle={{ alignItems: "center", paddingHorizontal: 6, paddingVertical: 8, minHeight: 112 }}
+      >
+        {conquista.rarity?.color ? (
+          <View style={{ position: "absolute", top: 7, right: 7 }}>
+            <RaridadeDot color={conquista.rarity.color} />
+          </View>
+        ) : null}
+        <Character name={character} size={50} motion={motion} />
+        <MipoText variant="micro" numberOfLines={2} style={{ color: foreground, textAlign: "center", marginTop: 4 }}>
+          {conquista.title}
+        </MipoText>
+      </Card>
+    </View>
+  );
+}
+
+export default function AchievementsHighlights({ userId, isOwnProfile = false, triggerOpenAll }: Props) {
+  const queryClient = useQueryClient();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [showAllModal, setShowAllModal] = useState(false);
-  const [selectedAch, setSelectedAch] = useState<any>(null);
+  const [selectedAch, setSelectedAch] = useState<Conquista | null>(null);
 
   useEffect(() => {
     if (triggerOpenAll) {
@@ -72,43 +164,33 @@ export default function AchievementsHighlights({
     }
   }, [triggerOpenAll]);
 
-  const { data: achievements = [], isLoading } = useQuery({
+  const { data: achievements = [], isLoading } = useQuery<Conquista[]>({
     queryKey: ["achievements", userId],
     queryFn: async () => (await api.get(`/achievements?userId=${userId}`)).data,
   });
 
   const setHighlightsMutation = useMutation({
-    mutationFn: (achievementIds: string[]) =>
-      api.post("/achievements/highlights", { achievementIds }),
+    mutationFn: (achievementIds: string[]) => api.post("/achievements/highlights", { achievementIds }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["achievements", userId] });
       setSelectedAch(null);
     },
-    onError: () =>
-      Alert.alert("Erro", "Você só pode destacar até 3 conquistas."),
+    onError: () => Alert.alert("Erro", "Você só pode destacar até 3 conquistas."),
   });
 
-  const obtainedAch = achievements.filter((a: any) => a.isObtained);
-  const highlightedAch = obtainedAch.filter((a: any) => a.isHighlighted);
-
-  const displayHighlights =
-    highlightedAch.length > 0 ? highlightedAch : obtainedAch.slice(0, 3);
-
-  const groupedAchievements = achievements.reduce((acc: any, ach: any) => {
-    const rarityName = ach.rarity?.name || "Padrão";
-    if (!acc[rarityName]) {
-      acc[rarityName] = { color: ach.rarity?.color || "#cbd5e1", items: [] };
-    }
-    acc[rarityName].items.push(ach);
-    return acc;
-  }, {});
+  const obtainedAch = achievements.filter((a) => a.isObtained);
+  const highlightedAch = obtainedAch.filter((a) => a.isHighlighted);
+  const displayHighlights = highlightedAch.length > 0 ? highlightedAch : obtainedAch.slice(0, 3);
+  const groupedAchievements = groupByRaridade(achievements);
+  const characterIndex = new Map(achievements.map((a, index) => [a.id, index]));
+  const characterOf = (conquista: Conquista) => characterFor(conquista, characterIndex.get(conquista.id) ?? 0);
 
   const handleToggleHighlight = (achId: string) => {
-    const currentHighlights = highlightedAch.map((a: any) => a.id);
-    let newHighlights;
+    const currentHighlights = highlightedAch.map((a) => a.id);
+    let newHighlights: string[];
 
     if (currentHighlights.includes(achId)) {
-      newHighlights = currentHighlights.filter((id: string) => id !== achId);
+      newHighlights = currentHighlights.filter((id) => id !== achId);
     } else {
       if (currentHighlights.length >= 3) {
         Alert.alert("Limite atingido", "Você só pode destacar 3 conquistas.");
@@ -119,379 +201,151 @@ export default function AchievementsHighlights({
     setHighlightsMutation.mutate(newHighlights);
   };
 
-  if (isLoading) return <View style={{ height: 80 }} />;
+  if (isLoading) {
+    return (
+      <View>
+        <SectionHeader title="Conquistas" />
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          {[0, 1, 2].map((index) => (
+            <Skeleton key={index} height={112} style={{ width: CARD_WIDTH }} />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  const isSelectedHighlighted = selectedAch ? highlightedAch.some((a) => a.id === selectedAch.id) : false;
+  const selectedTone = raridadeTone(selectedAch?.rarity);
+  const selectedDescription =
+    selectedAch?.description || (selectedAch?.condition ? `Condição: ${selectedAch.condition}` : "Sem descrição");
 
   return (
-    <View style={styles.container}>
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        🏆 Destaques
-      </Text>
+    <View>
+      <SectionHeader
+        title="Conquistas"
+        action={achievements.length > 0 ? { label: "Ver todas", accessibilityLabel: "Ver todas as conquistas", onPress: () => setShowAllModal(true) } : undefined}
+      />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {displayHighlights.map((ach: any) => {
-          const rarityColor = ach.rarity?.color || "#cbd5e1";
-          return (
-            <TouchableOpacity
+      {displayHighlights.length === 0 ? (
+        <MipoText variant="caption">Nenhuma conquista desbloqueada ainda.</MipoText>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -SCREEN_PADDING }}
+          contentContainerStyle={{ paddingHorizontal: SCREEN_PADDING, paddingBottom: 6, gap: 10 }}
+        >
+          {displayHighlights.map((ach, index) => (
+            <ConquistaCard
               key={ach.id}
-              style={styles.highlightItem}
+              conquista={ach}
+              character={characterOf(ach)}
+              motion={index === 0 ? "wiggle" : "none"}
+              dimmed={!ach.isObtained}
               onPress={() => setSelectedAch(ach)}
-            >
-              <View
-                style={[styles.highlightCircle, { borderColor: rarityColor }]}
-              >
-                <Image
-                  source={{ uri: ach.icon }}
-                  style={styles.highlightImage}
-                />
-                {ach.isObtained && <ShineEffect />}
+            />
+          ))}
+        </ScrollView>
+      )}
+
+      <BottomSheet visible={selectedAch !== null} onClose={() => setSelectedAch(null)}>
+        {selectedAch ? (
+          <View style={{ alignItems: "center", gap: 8 }}>
+            <View style={{ position: "absolute", top: 0, right: 0 }}>
+              <IconButton icon={X} size={34} accessibilityLabel="Fechar" onPress={() => setSelectedAch(null)} />
+            </View>
+            <Card tone={selectedTone} contentStyle={{ alignItems: "center", justifyContent: "center", width: 112, height: 112, padding: 6 }}>
+              <View style={{ opacity: selectedAch.isObtained ? 1 : LOCKED_OPACITY }}>
+                {selectedAch.icon ? (
+                  <Image
+                    source={{ uri: selectedAch.icon }}
+                    blurRadius={selectedAch.isObtained ? 0 : 5}
+                    style={{ width: 84, height: 84, borderRadius: 14 }}
+                  />
+                ) : (
+                  <Character name={characterOf(selectedAch)} size={84} motion={selectedAch.isObtained ? "wiggle" : "none"} />
+                )}
               </View>
-              <Text
-                style={[styles.highlightText, { color: theme.text }]}
-                numberOfLines={1}
-              >
-                {ach.title}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+            </Card>
 
-        {achievements.length > 0 && (
-          <TouchableOpacity
-            style={styles.highlightItem}
-            onPress={() => setShowAllModal(true)}
-          >
-            <View
-              style={[
-                styles.seeAllCircle,
-                { borderColor: theme.border, backgroundColor: theme.surface },
-              ]}
-            >
-              <Text style={[styles.seeAllText, { color: theme.text }]}>
-                {obtainedAch.length > 99 ? "99+" : obtainedAch.length}
-              </Text>
-              <Text style={{ fontSize: 10, color: theme.textMuted }}>
-                Conquistas
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+            <MipoText variant="screenTitle" style={{ fontSize: 22, textAlign: "center", marginTop: 6 }}>
+              {selectedAch.title}
+            </MipoText>
 
-      {/* MODAL DETALHES DA CONQUISTA */}
-      <Modal visible={!!selectedAch} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.detailCard, { backgroundColor: theme.surface }]}>
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={() => setSelectedAch(null)}
-            >
-              <X color={theme.textMuted} size={24} />
-            </TouchableOpacity>
-
-            <View
-              style={[
-                styles.detailImageContainer,
-                { borderColor: selectedAch?.rarity?.color || "#cbd5e1" },
-              ]}
-            >
-              <Image
-                source={{ uri: selectedAch?.icon }}
-                style={[
-                  styles.detailImage,
-                  !selectedAch?.isObtained && { opacity: 0.4 },
-                ]}
-                blurRadius={selectedAch?.isObtained ? 0 : 5}
-              />
-            </View>
-
-            <Text style={[styles.detailTitle, { color: theme.text }]}>
-              {selectedAch?.title}
-            </Text>
-
-            {selectedAch?.rarity && (
-              <View
-                style={[
-                  styles.rarityBadge,
-                  { backgroundColor: selectedAch.rarity.color + "20" },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: selectedAch.rarity.color,
-                    fontWeight: "bold",
-                    fontSize: 12,
-                  }}
-                >
-                  {selectedAch.rarity.name}
-                </Text>
+            {selectedAch.rarity ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <RaridadeDot color={selectedAch.rarity.color} />
+                <Chip label={selectedAch.rarity.name} tone={selectedTone} />
               </View>
-            )}
+            ) : null}
 
-            <Text style={[styles.detailDesc, { color: theme.textMuted }]}>
-              {selectedAch?.description ||
-                (selectedAch?.condition
-                  ? `Condição: ${selectedAch.condition}`
-                  : "Sem descrição")}
-            </Text>
+            <MipoText variant="body" color="muted" style={{ textAlign: "center" }}>
+              {selectedDescription}
+            </MipoText>
 
-            <View style={styles.percentageBox}>
-              <Text style={{ fontSize: 13, color: theme.textMuted }}>
-                <Text style={{ fontWeight: "bold", color: theme.text }}>
-                  {Number(selectedAch?.obtainedPercentage || 0).toFixed(1)}%
-                </Text>{" "}
-                dos usuários têm essa conquista
-              </Text>
-            </View>
+            <Card flat style={{ alignSelf: "stretch" }} contentStyle={{ alignItems: "center", backgroundColor: colors.surface2 }}>
+              <MipoText variant="caption">
+                <MipoText variant="bodyBold">{`${Number(selectedAch.obtainedPercentage || 0).toFixed(1)}%`}</MipoText>
+                {" dos usuários têm essa conquista"}
+              </MipoText>
+            </Card>
 
-            {isOwnProfile && selectedAch?.isObtained && (
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: theme.primary }]}
+            {isOwnProfile && selectedAch.isObtained ? (
+              <Button
+                label={isSelectedHighlighted ? "Remover dos destaques" : "Destacar no perfil"}
+                icon={Star}
+                variant="red"
+                block
+                loading={setHighlightsMutation.isPending}
                 onPress={() => handleToggleHighlight(selectedAch.id)}
-              >
-                <Star size={16} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  {highlightedAch.find((a: any) => a.id === selectedAch.id)
-                    ? "Remover dos Destaques"
-                    : "Destacar no Perfil"}
-                </Text>
-              </TouchableOpacity>
-            )}
+                style={{ marginTop: 4 }}
+              />
+            ) : null}
 
-            {!selectedAch?.isObtained && (
-              <View style={styles.lockedBox}>
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  🔒 Conquista Bloqueada
-                </Text>
-              </View>
-            )}
+            {!selectedAch.isObtained ? <Chip label="Conquista bloqueada" tone="dark" icon={Lock} style={{ alignSelf: "center", marginTop: 4 }} /> : null}
           </View>
-        </View>
-      </Modal>
+        ) : null}
+      </BottomSheet>
 
-      {/* MODAL VER TODAS */}
-      <Modal visible={showAllModal} animationType="slide">
-        <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: 50 }}>
-          <View
-            style={[
-              styles.fullModalHeader,
-              { borderBottomColor: theme.border },
-            ]}
-          >
-            <TouchableOpacity onPress={() => setShowAllModal(false)}>
-              <X color={theme.text} size={28} />
-            </TouchableOpacity>
-            <Text
-              style={{ fontSize: 18, fontWeight: "bold", color: theme.text }}
-            >
-              Todas as Conquistas
-            </Text>
-            <View style={{ width: 28 }} />
+      <Modal visible={showAllModal} animationType="slide" onRequestClose={() => setShowAllModal(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10 }}>
+            <IconButton icon={X} accessibilityLabel="Fechar" onPress={() => setShowAllModal(false)} />
+            <MipoText variant="screenTitle" accessibilityRole="header" style={{ flex: 1, fontSize: 22 }}>
+              Todas as conquistas
+            </MipoText>
+            <Chip label={`${obtainedAch.length}/${achievements.length}`} tone="yellow" />
           </View>
 
-          <ScrollView style={{ padding: 16 }}>
-            {Object.keys(groupedAchievements).map((rarityName) => {
-              const group = groupedAchievements[rarityName];
-              return (
-                <View key={rarityName} style={{ marginBottom: 25 }}>
-                  <View style={styles.rarityHeader}>
-                    <View
-                      style={[
-                        styles.rarityDot,
-                        { backgroundColor: group.color },
-                      ]}
-                    />
-                    <Text style={[styles.rarityTitle, { color: theme.text }]}>
-                      {rarityName}
-                    </Text>
-                  </View>
-
-                  <View style={styles.grid}>
-                    {group.items.map((ach: any) => (
-                      <TouchableOpacity
-                        key={ach.id}
-                        style={styles.gridItem}
-                        onPress={() => {
-                          // AQUI ESTÁ A MUDANÇA: Fecha o modal "Ver Todas" e abre o Detalhe
-                          setShowAllModal(false);
-                          setSelectedAch(ach);
-                        }}
-                      >
-                        <View
-                          style={[
-                            styles.gridCircle,
-                            {
-                              borderColor: ach.isObtained
-                                ? group.color
-                                : theme.border,
-                            },
-                          ]}
-                        >
-                          <Image
-                            source={{ uri: ach.icon }}
-                            style={[
-                              styles.gridImage,
-                              !ach.isObtained && { opacity: 0.3 },
-                            ]}
-                            blurRadius={ach.isObtained ? 0 : 5}
-                          />
-                          {ach.isObtained && <ShineEffect />}
-                        </View>
-                        <Text
-                          style={[styles.gridText, { color: theme.text }]}
-                          numberOfLines={2}
-                        >
-                          {ach.title}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
+            {groupedAchievements.map((group) => (
+              <View key={group.name} style={{ marginTop: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <RaridadeDot color={group.color} />
+                  <MipoText variant="section" accessibilityRole="header">
+                    {group.name}
+                  </MipoText>
                 </View>
-              );
-            })}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                  {group.items.map((ach) => (
+                    <ConquistaCard
+                      key={ach.id}
+                      conquista={ach}
+                      character={characterOf(ach)}
+                      motion="none"
+                      dimmed={!ach.isObtained}
+                      onPress={() => {
+                        setShowAllModal(false);
+                        setSelectedAch(ach);
+                      }}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
           </ScrollView>
         </View>
       </Modal>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { marginBottom: 10 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  scrollContent: { paddingHorizontal: 16, gap: 15 },
-  highlightItem: { alignItems: "center", width: 70 },
-  highlightCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-    marginBottom: 6,
-    padding: 2,
-  },
-  highlightImage: { width: "100%", height: "100%", borderRadius: 30 },
-  shine: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    width: "50%",
-    backgroundColor: "rgba(255,255,255,0.4)",
-  },
-  highlightText: { fontSize: 11, textAlign: "center" },
-  seeAllCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  seeAllText: { fontSize: 16, fontWeight: "bold" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  detailCard: {
-    width: "100%",
-    borderRadius: 24,
-    padding: 20,
-    alignItems: "center",
-  },
-  closeBtn: { position: "absolute", top: 15, right: 15, zIndex: 10 },
-  detailImageContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    overflow: "hidden",
-    marginBottom: 15,
-  },
-  detailImage: { width: "100%", height: "100%" },
-  detailTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 5,
-  },
-  rarityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 15,
-  },
-  detailDesc: {
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  percentageBox: {
-    backgroundColor: "rgba(120,113,108,0.1)",
-    padding: 10,
-    borderRadius: 12,
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  actionBtn: {
-    flexDirection: "row",
-    width: "100%",
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lockedBox: {
-    width: "100%",
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#3f3f46",
-  },
-  fullModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-  },
-  rarityHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  rarityDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
-  rarityTitle: { fontSize: 18, fontWeight: "bold" },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 15 },
-  gridItem: { width: "22%", alignItems: "center", marginBottom: 10 },
-  gridCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    overflow: "hidden",
-    padding: 2,
-    marginBottom: 5,
-  },
-  gridImage: { width: "100%", height: "100%", borderRadius: 28 },
-  gridText: { fontSize: 10, textAlign: "center" },
-});

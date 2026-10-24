@@ -1,7 +1,7 @@
 import React from "react";
 import { FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Pencil, Trash2, X } from "lucide-react-native";
+import { Flag, Pencil, Trash2, X } from "lucide-react-native";
 import { Avatar, Button, IconButton, Input, MipoText } from "../../components/ui";
 import { useTheme } from "../../theme/ThemeProvider";
 import { stroke } from "../../theme/tokens";
@@ -33,6 +33,7 @@ export interface PostDetailModalProps {
   onOpenProfile: (userId: string) => void;
   onClose: () => void;
   hidePostActions?: boolean;
+  onReportPost?: () => void;
 }
 
 export function PostDetailModal({
@@ -53,6 +54,7 @@ export function PostDetailModal({
   onOpenProfile,
   onClose,
   hidePostActions = false,
+  onReportPost,
 }: PostDetailModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -75,6 +77,8 @@ export function PostDetailModal({
               <IconButton icon={Pencil} accessibilityLabel="Editar post" onPress={onEditPost} size={34} />
               <IconButton icon={Trash2} accessibilityLabel="Excluir post" tone="red" onPress={onDeletePost} size={34} />
             </>
+          ) : onReportPost && post.user.id !== currentUser?.id ? (
+            <IconButton icon={Flag} accessibilityLabel="Denunciar post" onPress={onReportPost} size={34} />
           ) : null}
         </View>
 
