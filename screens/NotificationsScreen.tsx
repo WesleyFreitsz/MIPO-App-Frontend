@@ -55,6 +55,8 @@ interface NotificationData {
 
 type AvisosTab = "requests" | "notifications";
 
+type AvisoRow = { kind: "request"; request: FriendRequestItem } | { kind: "notification"; notification: NotificationItem };
+
 const iconByName: Record<string, { icon: LucideIcon; tone: AccentName }> = {
   calendar: { icon: Calendar, tone: "teal" },
   shield: { icon: ShieldAlert, tone: "orange" },
@@ -170,12 +172,12 @@ export default function NotificationsScreen() {
   const busy = acceptFriendRequestMutation.isPending || rejectFriendRequestMutation.isPending;
   const refreshControl = (refreshing: boolean) => <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.pink} />;
 
-  const sections =
+  const sections: { title: string; data: AvisoRow[] }[] =
     activeTab === "requests"
-      ? [{ title: "", data: friendRequests.map((request) => ({ kind: "request" as const, request })) }]
+      ? [{ title: "", data: friendRequests.map((request): AvisoRow => ({ kind: "request", request })) }]
       : groupByPeriod(notifications).map((group) => ({
           title: group.title,
-          data: group.data.map((notification) => ({ kind: "notification" as const, notification })),
+          data: group.data.map((notification): AvisoRow => ({ kind: "notification", notification })),
         }));
 
   return (
