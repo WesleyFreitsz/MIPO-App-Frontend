@@ -327,7 +327,7 @@ export default function ChatDetailScreen({ route, navigation }: ChatDetailScreen
             if (hasNextPage) fetchNextPage();
           }}
           onEndReachedThreshold={0.5}
-          ListFooterComponent={isFetchingNextPage ? <ActivityIndicator color={colors.pink} style={{ margin: 20 }} /> : null}
+          ListFooterComponent={isFetchingNextPage ? <ActivityIndicator color={colors.pink} style={{ margin: 20 }} /> : undefined}
         />
 
         {editingMessage ? (

@@ -40,7 +40,7 @@ export function AmigosTab({ friends, pendingCount, bottomReserve, onSeeRequests,
       style={{ marginHorizontal: -14 }}
       contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: bottomReserve, gap: 8 }}
       showsVerticalScrollIndicator={false}
-      ListHeaderComponent={pendingCount > 0 ? <View style={{ marginBottom: 10 }}><PendingRequestsCard count={pendingCount} onPress={onSeeRequests} /></View> : null}
+      ListHeaderComponent={pendingCount > 0 ? <View style={{ marginBottom: 10 }}><PendingRequestsCard count={pendingCount} onPress={onSeeRequests} /></View> : undefined}
       ListEmptyComponent={
         <EmptyState
           character="quebraCabeca3"

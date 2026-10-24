@@ -9,7 +9,7 @@ export interface InputProps extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
-export const Input = forwardRef<TextInput, InputProps>(function Input(
+export const Input = forwardRef<React.ComponentRef<typeof TextInput>, InputProps>(function Input(
   { icon: Icon, containerStyle, style, testID, multiline, ...props },
   ref,
 ) {

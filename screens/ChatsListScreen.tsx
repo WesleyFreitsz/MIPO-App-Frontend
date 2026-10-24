@@ -122,7 +122,7 @@ export default function ChatsListScreen({ navigation }: any) {
         ListFooterComponent={
           isFetchingNextPage ? (
             <ActivityIndicator style={{ margin: 20 }} />
-          ) : null
+          ) : undefined
         }
         ListEmptyComponent={() => (
           <View style={styles.empty}>
