@@ -1,206 +1,100 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Alert,
-  Image,
-  ActivityIndicator,
-  SafeAreaView,
-  useColorScheme,
-} from "react-native";
-import {
-  Bell,
-  Calendar,
-  Info,
-  Check,
-  ShieldAlert,
-  UserPlus,
-  X,
-} from "lucide-react-native";
-import { api } from "../services/api";
+import { Alert, Pressable, RefreshControl, SectionList, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Bell, Calendar, Check, Info, LucideIcon, ShieldAlert, Trophy } from "lucide-react-native";
+import { api } from "../services/api";
 import { usePushNotifications } from "../services/usePushNotifications";
 import {
-  useQueryClient,
-  useMutation,
-  useInfiniteQuery,
-} from "@tanstack/react-query";
+  Avatar,
+  Button,
+  Card,
+  Character,
+  EmptyState,
+  IconBox,
+  MipoText,
+  Screen,
+  SegmentedControl,
+  useBottomReserve,
+} from "../components/ui";
+import { StaggerIn } from "../motion/StaggerIn";
+import { useTheme } from "../theme/ThemeProvider";
+import { AccentName } from "../theme/tokens";
+import { relativeTime } from "./social/socialFormat";
 
-const FriendRequestCard = ({
-  request,
-  onAccept,
-  onReject,
-  isLoading,
-  theme,
-  navigation,
-}: any) => {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      // Ao clicar na solicitação, vai para o perfil da pessoa
-      onPress={() =>
-        navigation.navigate("PlayerProfile", { userId: request.fromUser.id })
-      }
-      style={[
-        styles.friendRequestCard,
-        { backgroundColor: theme.surface, borderColor: theme.border },
-      ]}
-    >
-      <Image
-        source={{
-          uri:
-            request.fromUser?.avatarUrl ||
-            `https://api.dicebear.com/7.x/initials/svg?seed=${request.fromUser?.name}`,
-        }}
-        style={styles.friendAvatar}
-      />
-      <View style={styles.friendInfo}>
-        <Text style={[styles.friendName, { color: theme.text }]}>
-          {request.fromUser?.nickname || request.fromUser?.name}
-        </Text>
-        <Text style={[styles.friendCity, { color: theme.textLighter }]}>
-          {request.fromUser?.city}
-        </Text>
-        <Text style={[styles.requestTime, { color: theme.textLighter }]}>
-          há{" "}
-          {Math.floor(
-            (Date.now() - new Date(request.createdAt).getTime()) / (1000 * 60),
-          )}{" "}
-          min
-        </Text>
-      </View>
-      <View style={styles.friendActions}>
-        <TouchableOpacity
-          style={[styles.acceptBtn, { backgroundColor: theme.success }]}
-          onPress={(e) => {
-            e.stopPropagation();
-            onAccept(request.id);
-          }} // Impede que abra o perfil ao clicar em aceitar
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Check color="#fff" size={18} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.rejectBtn, { backgroundColor: theme.border }]}
-          onPress={(e) => {
-            e.stopPropagation();
-            onReject(request.id);
-          }} // Impede que abra o perfil ao clicar em recusar
-          disabled={isLoading}
-        >
-          <X color={theme.textLighter} size={18} />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+interface Page<T> {
+  data: T[];
+  hasMore: boolean;
+  skip: number | string;
+  take: number | string;
+}
+
+interface FriendRequestItem {
+  id: string;
+  createdAt: string;
+  fromUser?: { id: string; name: string; nickname?: string | null; city?: string | null; avatarUrl?: string | null };
+}
+
+interface NotificationItem {
+  id: string;
+  title?: string;
+  message?: string;
+  icon?: string;
+  isRead: boolean;
+  createdAt: string;
+  data?: unknown;
+}
+
+interface NotificationData {
+  userId?: string;
+  eventId?: string;
+  postId?: string;
+  achievementId?: string;
+}
+
+type AvisosTab = "requests" | "notifications";
+
+const iconByName: Record<string, { icon: LucideIcon; tone: AccentName }> = {
+  calendar: { icon: Calendar, tone: "teal" },
+  shield: { icon: ShieldAlert, tone: "orange" },
+  check: { icon: Check, tone: "lime" },
+  "x-circle": { icon: Info, tone: "red" },
+  trophy: { icon: Trophy, tone: "yellow" },
 };
 
-const NotificationCard = ({ notification, theme, navigation }: any) => {
-  const getIcon = (iconName: string) => {
-    switch (iconName) {
-      case "calendar":
-        return <Calendar size={20} color="#10b981" />;
-      case "shield":
-        return <ShieldAlert size={20} color="#f59e0b" />;
-      case "check":
-        return <Check size={20} color="#6366f1" />;
-      case "x-circle":
-        return <Info size={20} color="#ef4444" />;
-      default:
-        return <Bell size={20} color="#94a3b8" />;
+function parseData(raw: unknown): NotificationData {
+  if (typeof raw === "string") {
+    try {
+      return (JSON.parse(raw) as NotificationData) ?? {};
+    } catch {
+      return {};
     }
-  };
+  }
+  return (raw as NotificationData) ?? {};
+}
 
-  const handlePress = () => {
-    let data = notification.data;
-
-    if (typeof data === "string") {
-      try {
-        data = JSON.parse(data);
-      } catch (e) {}
-    }
-
-    if (!data) data = {}; // Garante que seja um objeto válido
-
-    // Debug: Olhe no console se o ID do post está vindo no Like
-    console.log("Notificação Clicada:", notification.title, "Dados:", data);
-
-    if (data.userId) {
-      navigation.navigate("PlayerProfile", { userId: data.userId });
-    } else if (data.eventId) {
-      navigation.navigate("EventsList");
-    } else if (data.postId) {
-      // Vai para a tela Social e passa um timestamp 't' novo para forçar a atualização
-      navigation.navigate("Social", { postId: data.postId, t: Date.now() });
-    } else if (
-      data.achievementId ||
-      notification.icon === "trophy" ||
-      notification.title?.toLowerCase().includes("conquista")
-    ) {
-      // Se for uma conquista, vai para a tela Perfil passando a ordem de abrir o modal
-      navigation.navigate("Perfil", { openAchievements: Date.now() });
-    }
-  };
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={handlePress}
-      style={[
-        styles.notifCard,
-        { backgroundColor: theme.surface, borderColor: theme.border },
-        !notification.isRead && {
-          borderLeftWidth: 4,
-          borderLeftColor: theme.primary,
-          backgroundColor: theme.unreadBg,
-        },
-      ]}
-    >
-      <View style={[styles.iconContainer, { backgroundColor: theme.bg }]}>
-        {getIcon(notification.icon)}
-      </View>
-      <View style={styles.content}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.notifTitle, { color: theme.text }]}>
-            {notification.title}
-          </Text>
-          <Text style={[styles.notifTime, { color: theme.textLighter }]}>
-            {new Date(notification.createdAt).toLocaleDateString()}
-          </Text>
-        </View>
-        <Text style={[styles.notifMessage, { color: theme.textLighter }]}>
-          {notification.message}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
+function groupByPeriod(items: NotificationItem[], now: Date = new Date()) {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekAgo = startOfToday - 6 * 86_400_000;
+  const groups: { title: string; data: NotificationItem[] }[] = [
+    { title: "Hoje", data: [] },
+    { title: "Esta semana", data: [] },
+    { title: "Antes", data: [] },
+  ];
+  for (const item of items) {
+    const time = new Date(item.createdAt).getTime();
+    groups[time >= startOfToday ? 0 : time >= weekAgo ? 1 : 2].data.push(item);
+  }
+  return groups.filter((group) => group.data.length > 0);
+}
 
 export default function NotificationsScreen() {
-  const [activeTab, setActiveTab] = useState("requests");
+  const [activeTab, setActiveTab] = useState<AvisosTab>("requests");
   const queryClient = useQueryClient();
-  const navigation = useNavigation<any>();
-  const scheme = useColorScheme();
-  const isDark = scheme === "dark";
-
-  const theme = {
-    bg: isDark ? "#000000" : "#faf6f1",
-    surface: isDark ? "#121212" : "#ffffff",
-    text: isDark ? "#ffffff" : "#1c1917",
-    textLighter: isDark ? "#a1a1aa" : "#78716c",
-    border: isDark ? "#27272a" : "#e7e5e4",
-    primary: "#c73636",
-    success: "#10b981",
-    unreadBg: isDark ? "#2a1215" : "#fff5f5",
-  };
-
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+  const { colors } = useTheme();
+  const bottomReserve = useBottomReserve(true);
   const { requestPermission } = usePushNotifications();
 
   useEffect(() => {
@@ -211,7 +105,6 @@ export default function NotificationsScreen() {
     }
   }, [activeTab]);
 
-  // INFINITE QUERIES
   const {
     data: reqsData,
     fetchNextPage: fetchNextReqs,
@@ -220,17 +113,10 @@ export default function NotificationsScreen() {
     isFetching: isFetchingReqs,
   } = useInfiniteQuery({
     queryKey: ["friendRequests"],
-    queryFn: async ({ pageParam = 0 }) =>
-      (
-        await api.get("/friends/requests/pending", {
-          params: { skip: pageParam, take: 20 },
-        })
-      ).data,
+    queryFn: async ({ pageParam = 0 }): Promise<Page<FriendRequestItem>> =>
+      (await api.get("/friends/requests/pending", { params: { skip: pageParam, take: 20 } })).data,
     initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore
-        ? Number(lastPage.skip) + Number(lastPage.take)
-        : undefined,
+    getNextPageParam: (lastPage: Page<FriendRequestItem>) => (lastPage.hasMore ? Number(lastPage.skip) + Number(lastPage.take) : undefined),
   });
 
   const {
@@ -241,29 +127,18 @@ export default function NotificationsScreen() {
     isFetching: isFetchingNotifs,
   } = useInfiniteQuery({
     queryKey: ["notifications", "infinite"],
-    queryFn: async ({ pageParam = 0 }) =>
-      (
-        await api.get("/notifications", {
-          params: { skip: pageParam, take: 20 },
-        })
-      ).data,
+    queryFn: async ({ pageParam = 0 }): Promise<Page<NotificationItem>> =>
+      (await api.get("/notifications", { params: { skip: pageParam, take: 20 } })).data,
     initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore
-        ? Number(lastPage.skip) + Number(lastPage.take)
-        : undefined,
+    getNextPageParam: (lastPage: Page<NotificationItem>) => (lastPage.hasMore ? Number(lastPage.skip) + Number(lastPage.take) : undefined),
   });
 
   const friendRequests = reqsData?.pages.flatMap((p) => p.data) || [];
   const notifications = notifsData?.pages.flatMap((p) => p.data) || [];
-
-  // Contagem para os badges internos
-  const reqsCount = friendRequests.length;
-  const unreadNotifsCount = notifications.filter((n: any) => !n.isRead).length;
+  const unreadNotifsCount = notifications.filter((n) => !n.isRead).length;
 
   const acceptFriendRequestMutation = useMutation({
-    mutationFn: (friendshipId: string) =>
-      api.post(`/friends/${friendshipId}/accept`),
+    mutationFn: (friendshipId: string) => api.post(`/friends/${friendshipId}/accept`),
     onSuccess: () => {
       refetchReqs();
       queryClient.invalidateQueries({ queryKey: ["friends"] });
@@ -272,8 +147,7 @@ export default function NotificationsScreen() {
   });
 
   const rejectFriendRequestMutation = useMutation({
-    mutationFn: (friendshipId: string) =>
-      api.delete(`/friends/${friendshipId}/reject`),
+    mutationFn: (friendshipId: string) => api.delete(`/friends/${friendshipId}/reject`),
     onSuccess: () => {
       refetchReqs();
     },
@@ -284,257 +158,122 @@ export default function NotificationsScreen() {
     refetchNotifs();
   };
 
+  const openNotification = (notification: NotificationItem) => {
+    const data = parseData(notification.data);
+    if (data.userId) navigation.navigate("PlayerProfile", { userId: data.userId });
+    else if (data.eventId) navigation.navigate("EventsList");
+    else if (data.postId) navigation.navigate("Social", { postId: data.postId, t: Date.now() });
+    else if (data.achievementId || notification.icon === "trophy" || notification.title?.toLowerCase().includes("conquista"))
+      navigation.navigate("Perfil", { openAchievements: Date.now() });
+  };
+
+  const busy = acceptFriendRequestMutation.isPending || rejectFriendRequestMutation.isPending;
+  const refreshControl = (refreshing: boolean) => <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.pink} />;
+
+  const sections =
+    activeTab === "requests"
+      ? [{ title: "", data: friendRequests.map((request) => ({ kind: "request" as const, request })) }]
+      : groupByPeriod(notifications).map((group) => ({
+          title: group.title,
+          data: group.data.map((notification) => ({ kind: "notification" as const, notification })),
+        }));
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
-      <View
-        style={[
-          styles.header,
-          { backgroundColor: theme.surface, borderBottomColor: theme.border },
-        ]}
-      >
-        <Text style={[styles.title, { color: theme.text }]}>Notificações</Text>
+    <Screen>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6, marginBottom: 8 }}>
+        <MipoText variant="screenTitle" accessibilityRole="header">
+          Avisos
+        </MipoText>
+        <Character name="carta2" size={64} motion="wiggle" />
       </View>
 
-      {/* ABAS COM BOLINHAS DE NOTIFICAÇÃO INTERNAS */}
-      <View
-        style={[
-          styles.tabContainer,
-          { backgroundColor: theme.surface, borderBottomColor: theme.border },
+      <SegmentedControl
+        options={[
+          { value: "requests", label: friendRequests.length > 0 ? `Pedidos (${friendRequests.length})` : "Pedidos" },
+          { value: "notifications", label: unreadNotifsCount > 0 ? `Avisos (${unreadNotifsCount})` : "Avisos" },
         ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "requests" && { borderBottomColor: theme.primary },
-          ]}
-          onPress={() => setActiveTab("requests")}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <UserPlus
-              color={
-                activeTab === "requests" ? theme.primary : theme.textLighter
-              }
-              size={18}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+
+      <SectionList
+        sections={sections}
+        keyExtractor={(item, index) => `${item.kind === "request" ? item.request.id : item.notification.id}-${index}`}
+        style={{ marginHorizontal: -14 }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: bottomReserve, gap: 10 }}
+        stickySectionHeadersEnabled={false}
+        showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl(activeTab === "requests" ? isFetchingReqs && !hasNextReqs : isFetchingNotifs && !hasNextNotifs)}
+        onEndReached={() => {
+          if (activeTab === "requests" && hasNextReqs && !isFetchingReqs) fetchNextReqs();
+          if (activeTab === "notifications" && hasNextNotifs && !isFetchingNotifs) fetchNextNotifs();
+        }}
+        onEndReachedThreshold={0.5}
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <MipoText variant="label" style={{ marginTop: 6 }}>
+              {section.title}
+            </MipoText>
+          ) : null
+        }
+        ListEmptyComponent={
+          activeTab === "requests" ? (
+            <EmptyState character="quebraCabeca3" title="Nenhum pedido por aqui" message="Quando alguém quiser ser seu amigo, aparece aqui." />
+          ) : (
+            <EmptyState
+              character="carta5"
+              title="Tudo em dia por aqui"
+              message="Quando alguém te chamar pra jogar, aparece aqui."
+              action={{ label: "Ver eventos", onPress: () => navigation.navigate("EventsList") }}
             />
-            <Text
-              style={[
-                styles.tabText,
-                { color: theme.textLighter },
-                activeTab === "requests" && {
-                  color: theme.primary,
-                  fontWeight: "600",
-                },
-              ]}
-            >
-              Solicitações
-            </Text>
-            {reqsCount > 0 && (
-              <View
-                style={[styles.innerBadge, { backgroundColor: theme.primary }]}
+          )
+        }
+        renderItem={({ item, index }) => {
+          if (item.kind === "request") {
+            const { request } = item;
+            const from = request.fromUser;
+            const label = from?.nickname || from?.name || "Alguém";
+            return (
+              <StaggerIn index={index}>
+                <Card onPress={() => from && navigation.navigate("PlayerProfile", { userId: from.id })} accessibilityLabel={`Ver perfil de ${label}`}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <Avatar id={from?.id ?? request.id} name={from?.name ?? label} uri={from?.avatarUrl} />
+                    <View style={{ flex: 1 }}>
+                      <MipoText variant="cardTitle">{`${label} quer ser seu amigo`}</MipoText>
+                      <MipoText variant="micro">{[from?.city, relativeTime(request.createdAt)].filter(Boolean).join(" · ")}</MipoText>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                    <Button label="Aceitar" size="sm" block disabled={busy} onPress={() => acceptFriendRequestMutation.mutate(request.id)} style={{ flex: 1 }} />
+                    <Button label="Recusar" size="sm" variant="ghost" block disabled={busy} onPress={() => rejectFriendRequestMutation.mutate(request.id)} style={{ flex: 1 }} />
+                  </View>
+                </Card>
+              </StaggerIn>
+            );
+          }
+          const { notification } = item;
+          const visual = iconByName[notification.icon ?? ""] ?? { icon: Bell, tone: "yellow" as AccentName };
+          return (
+            <StaggerIn index={index}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={[notification.title, notification.message].filter(Boolean).join(". ")}
+                onPress={() => openNotification(notification)}
               >
-                <Text style={styles.innerBadgeText}>{reqsCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === "notifications" && {
-              borderBottomColor: theme.primary,
-            },
-          ]}
-          onPress={() => setActiveTab("notifications")}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Bell
-              color={
-                activeTab === "notifications"
-                  ? theme.primary
-                  : theme.textLighter
-              }
-              size={18}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                { color: theme.textLighter },
-                activeTab === "notifications" && {
-                  color: theme.primary,
-                  fontWeight: "600",
-                },
-              ]}
-            >
-              Avisos
-            </Text>
-            {unreadNotifsCount > 0 && (
-              <View
-                style={[styles.innerBadge, { backgroundColor: theme.primary }]}
-              >
-                <Text style={styles.innerBadgeText}>{unreadNotifsCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {activeTab === "requests" && (
-        <FlatList
-          data={friendRequests}
-          keyExtractor={(item: any, index: number) => `${item.id}-${index}`}
-          refreshControl={
-            <RefreshControl
-              refreshing={isFetchingReqs && !hasNextReqs}
-              onRefresh={onRefresh}
-            />
-          }
-          onEndReached={() => {
-            if (hasNextReqs && !isFetchingReqs) fetchNextReqs();
-          }}
-          onEndReachedThreshold={0.5}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <UserPlus size={40} color={theme.border} />
-              <Text style={[styles.emptyText, { color: theme.textLighter }]}>
-                Nenhuma solicitação.
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <FriendRequestCard
-              request={item}
-              theme={theme}
-              navigation={navigation}
-              onAccept={(id: string) => acceptFriendRequestMutation.mutate(id)}
-              onReject={(id: string) => rejectFriendRequestMutation.mutate(id)}
-              isLoading={
-                acceptFriendRequestMutation.isPending ||
-                rejectFriendRequestMutation.isPending
-              }
-            />
-          )}
-          contentContainerStyle={styles.list}
-        />
-      )}
-
-      {activeTab === "notifications" && (
-        <FlatList
-          data={notifications}
-          keyExtractor={(item, index) => `${item.id}-${index}`}
-          refreshControl={
-            <RefreshControl
-              refreshing={isFetchingNotifs && !hasNextNotifs}
-              onRefresh={onRefresh}
-            />
-          }
-          onEndReached={() => {
-            if (hasNextNotifs && !isFetchingNotifs) fetchNextNotifs();
-          }}
-          onEndReachedThreshold={0.5}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Bell size={40} color={theme.border} />
-              <Text style={[styles.emptyText, { color: theme.textLighter }]}>
-                Você não tem notificações.
-              </Text>
-            </View>
-          }
-          renderItem={({ item }: any) => (
-            <NotificationCard
-              notification={item}
-              theme={theme}
-              navigation={navigation}
-            />
-          )}
-          contentContainerStyle={styles.list}
-        />
-      )}
-    </SafeAreaView>
+                <Card contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10, opacity: notification.isRead ? 0.85 : 1 }}>
+                  <IconBox icon={visual.icon} tone={visual.tone} />
+                  <View style={{ flex: 1 }}>
+                    <MipoText variant="cardTitle">{notification.title}</MipoText>
+                    {notification.message ? <MipoText variant="caption">{notification.message}</MipoText> : null}
+                    <MipoText variant="micro">{relativeTime(notification.createdAt)}</MipoText>
+                  </View>
+                  {!notification.isRead ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.red }} /> : null}
+                </Card>
+              </Pressable>
+            </StaggerIn>
+          );
+        }}
+      />
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { padding: 20, borderBottomWidth: 1 },
-  title: { fontSize: 22, fontWeight: "bold" },
-  tabContainer: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
-  },
-  tab: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabText: { fontSize: 13, fontWeight: "500" },
-  innerBadge: {
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  innerBadgeText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  list: { padding: 16 },
-  empty: { alignItems: "center", marginTop: 100 },
-  emptyText: { marginTop: 10 },
-  friendRequestCard: {
-    flexDirection: "row",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  friendAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
-  friendInfo: { flex: 1 },
-  friendName: { fontSize: 14, fontWeight: "600" },
-  friendCity: { fontSize: 12, marginTop: 2 },
-  requestTime: { fontSize: 11, marginTop: 2 },
-  friendActions: { flexDirection: "row", gap: 8 },
-  acceptBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  rejectBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  notifCard: {
-    flexDirection: "row",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  content: { flex: 1 },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  notifTitle: { fontSize: 14, fontWeight: "600" },
-  notifTime: { fontSize: 10 },
-  notifMessage: { fontSize: 13, lineHeight: 18 },
-});
