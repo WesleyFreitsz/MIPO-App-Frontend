@@ -1,24 +1,78 @@
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
   Alert,
-  ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
+  View,
 } from "react-native";
-import { Calendar, Clock, Camera } from "lucide-react-native";
+import { Calendar, Clock, ImagePlus } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { api } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { Button, FieldLabel, Input, MipoText, Screen, ScreenHeader, SegmentedControl } from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
+import { radius, stroke } from "../theme/tokens";
+import { EventoDetail } from "../types";
 
-export default function AdminCreateEventScreen({ navigation, route }: any) {
+interface AdminCreateEventScreenProps {
+  navigation: Pick<NavigationProp<ParamListBase>, "goBack">;
+  route: { params?: { eventId?: string } };
+}
+
+interface ApiError {
+  response?: { data?: { message?: string } };
+  message?: string;
+}
+
+const localOptions = [
+  { value: "SALAO", label: "Salão" },
+  { value: "SALINHA", label: "Salinha" },
+  { value: "EXTERNO", label: "Externo" },
+  { value: "PERSONALIZADO", label: "Outro" },
+];
+
+function PickerField({ icon: Icon, label, onPress, accessibilityLabel }: { icon: LucideIcon; label: string; onPress: () => void; accessibilityLabel: string }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        minHeight: 44,
+        paddingHorizontal: 12,
+        borderWidth: stroke.regular,
+        borderColor: colors.line,
+        borderRadius: radius.input,
+        backgroundColor: colors.surface,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      <Icon size={16} color={colors.muted} strokeWidth={2.4} />
+      <MipoText variant="bodyBold" style={{ fontSize: 14 }}>
+        {label}
+      </MipoText>
+    </Pressable>
+  );
+}
+
+export default function AdminCreateEventScreen({ navigation, route }: AdminCreateEventScreenProps) {
+  const { user } = useAuth();
+  const { colors } = useTheme();
   const eventId = route.params?.eventId;
   const isEditing = !!eventId;
+  const isAdmin = user?.role === "ADMIN";
 
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
@@ -39,15 +93,15 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
   const loadEventData = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/events`);
-      const event = response.data.find((e: any) => e.id === eventId);
+      const response = await api.get<EventoDetail[]>(`/events`);
+      const event = response.data.find((e) => e.id === eventId);
 
       if (event) {
         setTitle(event.title);
-        setDescription(event.description);
+        setDescription(event.description ?? "");
         setLocalType(event.space);
         setCustomLocation(event.customLocation || "");
-        setBanner(event.bannerUrl);
+        setBanner(event.bannerUrl ?? null);
         setEventDate(new Date(event.dateTime));
       } else {
         Alert.alert("Erro", "Evento não encontrado.");
@@ -60,7 +114,7 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
     }
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const onDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
     if (Platform.OS === "android") setShowPicker(false);
     if (selectedDate) setEventDate(selectedDate);
   };
@@ -122,7 +176,8 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
         Alert.alert("Sucesso", "Evento criado!");
       }
       navigation.goBack();
-    } catch (error: any) {
+    } catch (caught) {
+      const error = caught as ApiError;
       Alert.alert(
         "Erro",
         error.response?.data?.message || error.message || "Falha na operação.",
@@ -132,192 +187,112 @@ export default function AdminCreateEventScreen({ navigation, route }: any) {
     }
   };
 
-  const LocationChip = ({ label, value }: any) => (
-    <TouchableOpacity
-      style={[styles.chip, localType === value && styles.chipActive]}
-      onPress={() => setLocalType(value)}
-    >
-      <Text
-        style={[styles.chipText, localType === value && styles.chipTextActive]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+  const pickBanner = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.5,
+    });
+    if (!res.canceled) setBanner(res.assets[0].uri);
+  };
+
+  const openPicker = (mode: "date" | "time") => {
+    setPickerMode(mode);
+    setShowPicker(true);
+  };
+
+  const submitLabel = isEditing ? "Salvar alterações" : isAdmin ? "Publicar evento" : "Enviar sugestão";
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ padding: 20 }}
-    >
-      <Text style={styles.label}>Banner do Evento</Text>
-      <TouchableOpacity
-        style={styles.bannerButton}
-        onPress={async () => {
-          const res = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images"],
-            allowsEditing: true,
-            aspect: [16, 9],
-            quality: 0.5,
-          });
-          if (!res.canceled) setBanner(res.assets[0].uri);
-        }}
-      >
-        {banner ? (
-          <Image source={{ uri: banner }} style={styles.bannerImage} />
-        ) : (
-          <View style={styles.bannerPlaceholder}>
-            <Camera color="#94a3b8" size={32} />
-            <Text style={{ color: "#94a3b8", marginTop: 8 }}>
-              Selecionar Imagem
-            </Text>
+    <Screen>
+      <ScreenHeader title={isEditing ? "Editar evento" : isAdmin ? "Novo evento" : "Sugerir evento"} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={banner ? "Trocar banner" : "Adicionar banner"}
+            onPress={pickBanner}
+            style={{
+              height: 170,
+              borderWidth: stroke.regular,
+              borderStyle: "dashed",
+              borderColor: colors.line,
+              borderRadius: radius.card,
+              backgroundColor: colors.surface2,
+              overflow: "hidden",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
+          >
+            {banner ? (
+              <Image source={{ uri: banner }} style={{ width: "100%", height: "100%" }} />
+            ) : (
+              <>
+                <ImagePlus size={30} color={colors.muted} strokeWidth={2.4} />
+                <MipoText variant="bodyBold" color="muted">
+                  Adicionar banner
+                </MipoText>
+              </>
+            )}
+          </Pressable>
+
+          <FieldLabel>Nome do evento</FieldLabel>
+          <Input value={title} onChangeText={setTitle} placeholder="Ex: Torneio de Catan" />
+
+          <FieldLabel>Descrição</FieldLabel>
+          <Input
+            multiline
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Detalhes do evento..."
+            containerStyle={{ minHeight: 100 }}
+          />
+
+          <FieldLabel>Local</FieldLabel>
+          <SegmentedControl options={localOptions} value={localType} onChange={setLocalType} />
+
+          {localType === "PERSONALIZADO" && (
+            <Input
+              placeholder="Digite o local ou endereço"
+              value={customLocation}
+              onChangeText={setCustomLocation}
+              containerStyle={{ marginTop: 10 }}
+            />
+          )}
+
+          <FieldLabel>Data e horário</FieldLabel>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <PickerField
+              icon={Calendar}
+              label={eventDate.toLocaleDateString()}
+              accessibilityLabel="Escolher data"
+              onPress={() => openPicker("date")}
+            />
+            <PickerField
+              icon={Clock}
+              label={eventDate.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              accessibilityLabel="Escolher horário"
+              onPress={() => openPicker("time")}
+            />
           </View>
-        )}
-      </TouchableOpacity>
 
-      <Text style={styles.label}>Nome do Evento</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Ex: Torneio de Catan"
-      />
+          {showPicker && (
+            <DateTimePicker
+              value={eventDate}
+              mode={pickerMode}
+              is24Hour
+              onChange={onDateChange}
+            />
+          )}
+        </ScrollView>
 
-      <Text style={styles.label}>Descrição</Text>
-      <TextInput
-        style={[styles.input, { height: 100, textAlignVertical: "top" }]}
-        multiline
-        value={description}
-        onChangeText={setDescription}
-        placeholder="Detalhes do evento..."
-      />
-
-      <Text style={styles.label}>Localização</Text>
-      <View style={styles.row}>
-        <LocationChip label="Salão" value="SALAO" />
-        <LocationChip label="Salinha" value="SALINHA" />
-        <LocationChip label="Externo" value="EXTERNO" />
-        <LocationChip label="Personalizado" value="PERSONALIZADO" />
-      </View>
-
-      {localType === "PERSONALIZADO" && (
-        <TextInput
-          style={[styles.input, { marginTop: 10 }]}
-          placeholder="Digite o local ou endereço"
-          value={customLocation}
-          onChangeText={setCustomLocation}
-        />
-      )}
-
-      <View style={styles.rowInput}>
-        <TouchableOpacity
-          onPress={() => {
-            setPickerMode("date");
-            setShowPicker(true);
-          }}
-          style={styles.iconInput}
-        >
-          <Calendar size={20} color="#64748b" />
-          <Text style={{ marginLeft: 8 }}>
-            {eventDate.toLocaleDateString()}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => {
-            setPickerMode("time");
-            setShowPicker(true);
-          }}
-          style={styles.iconInput}
-        >
-          <Clock size={20} color="#64748b" />
-          <Text style={{ marginLeft: 8 }}>
-            {eventDate.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {showPicker && (
-        <DateTimePicker
-          value={eventDate}
-          mode={pickerMode}
-          is24Hour
-          onChange={onDateChange}
-        />
-      )}
-
-      <TouchableOpacity
-        style={styles.saveBtn}
-        onPress={handleSalvar}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.saveBtnText}>
-            {isEditing ? "Salvar Alterações" : "Publicar Evento"}
-          </Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+        <Button label={submitLabel} variant="red" block loading={loading} onPress={handleSalvar} style={{ marginTop: 8 }} />
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  label: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#475569",
-    marginBottom: 8,
-    marginTop: 15,
-  },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 12,
-  },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#e2e8f0",
-  },
-  chipActive: { backgroundColor: "#E11D48" },
-  chipText: { color: "#64748b", fontWeight: "bold" },
-  chipTextActive: { color: "#fff" },
-  rowInput: { flexDirection: "row", gap: 10, marginTop: 15 },
-  iconInput: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 12,
-  },
-  saveBtn: {
-    backgroundColor: "#E11D48",
-    padding: 16,
-    borderRadius: 15,
-    marginTop: 30,
-    alignItems: "center",
-  },
-  saveBtnText: { color: "#fff", fontWeight: "bold" },
-  bannerButton: {
-    height: 180,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 16,
-    overflow: "hidden",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  bannerImage: { width: "100%", height: "100%" },
-  bannerPlaceholder: { alignItems: "center" },
-});

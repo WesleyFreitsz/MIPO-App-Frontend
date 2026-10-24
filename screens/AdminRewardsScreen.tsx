@@ -1,18 +1,27 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
-import { Gift, Plus, Trash2, Edit3, Coins, Package } from "lucide-react-native";
+import { View, FlatList, Alert } from "react-native";
+import { Plus, Trash2, Package } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
+import {
+  BottomSheet,
+  Button,
+  Card,
+  Character,
+  Chip,
+  EmptyState,
+  Fab,
+  FieldLabel,
+  IconButton,
+  Input,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  useBottomReserve,
+} from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
+import { foregroundOn } from "../theme/tokens";
 
 interface Reward {
   id: string;
@@ -21,13 +30,18 @@ interface Reward {
   stock: number;
 }
 
+const REWARD_TONES = ["yellow", "teal", "pink"] as const;
+
 export default function AdminRewardsScreen() {
   const queryClient = useQueryClient();
+  const { colors } = useTheme();
+  const bottomReserve = useBottomReserve(false);
+  const [formVisible, setFormVisible] = useState(false);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("");
 
-  const { data: rewards = [], isLoading } = useQuery({
+  const { data: rewards = [], isLoading } = useQuery<Reward[]>({
     queryKey: ["rewards"],
     queryFn: async () => {
       const res = await api.get("/rewards");
@@ -43,6 +57,7 @@ export default function AdminRewardsScreen() {
       setTitle("");
       setPrice("");
       setStock("");
+      setFormVisible(false);
       Alert.alert("Sucesso", "Recompensa cadastrada!");
     },
   });
@@ -77,158 +92,76 @@ export default function AdminRewardsScreen() {
     ]);
   };
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#E11D48" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.formContainer}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.sectionTitle}>Nova Recompensa 🎁</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Nome do Prêmio (Ex: Jogo Catan)"
-          value={title}
-          onChangeText={setTitle}
-        />
-
-        <View style={styles.row}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-            <TextInput
-              style={styles.input}
-              placeholder="Preço (Moedas)"
-              keyboardType="numeric"
-              value={price}
-              onChangeText={setPrice}
-            />
-          </View>
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <TextInput
-              style={styles.input}
-              placeholder="Estoque Inicial"
-              keyboardType="numeric"
-              value={stock}
-              onChangeText={setStock}
-            />
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddReward}
-          disabled={
-            createMutation.isPending ||
-            !title.trim() ||
-            !price.trim() ||
-            !stock.trim()
-          }
-        >
-          <Plus color="#fff" size={20} />
-          <Text style={styles.addButtonText}>Cadastrar Recompensa</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      <View style={styles.listSection}>
-        <Text style={styles.sectionTitle}>Recompensas Ativas</Text>
+    <Screen>
+      <ScreenHeader title="Recompensas" />
+      {isLoading ? (
+        <LoadingState />
+      ) : (
         <FlatList
           data={rewards}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.rewardCard}>
-              <View style={styles.rewardInfo}>
-                <Text style={styles.rewardTitle}>{item.title}</Text>
-                <View style={styles.metaRow}>
-                  <View style={styles.metaItem}>
-                    <Coins size={14} color="#f59e0b" />
-                    <Text style={styles.metaText}>{item.price} moedas</Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Package size={14} color="#64748b" />
-                    <Text style={styles.metaText}>{item.stock} em estoque</Text>
+          showsVerticalScrollIndicator={false}
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve + 80, gap: 14 }}
+          ListEmptyComponent={
+            <EmptyState character="moeda5" title="Nenhuma recompensa ativa" message="Toque no + para cadastrar a primeira." />
+          }
+          renderItem={({ item, index }) => {
+            const tone = REWARD_TONES[index % REWARD_TONES.length];
+            const foreground = foregroundOn(tone, colors);
+            return (
+              <Card tone={tone} contentStyle={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Character name="moeda5" size={60} motion={index === 0 ? "idle" : "none"} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <MipoText variant="cardTitle" numberOfLines={2} style={{ color: foreground }}>
+                    {item.title}
+                  </MipoText>
+                  <Chip tone="dark" label={`${item.price} moedas`} />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Package size={14} color={foreground} />
+                    <MipoText variant="micro" style={{ color: foreground }}>
+                      {item.stock} em estoque
+                    </MipoText>
                   </View>
                 </View>
-              </View>
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.actionIcon} onPress={() => {}}>
-                  <Edit3 color="#6366f1" size={20} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIcon}
-                  onPress={() => handleDelete(item.id)}
-                >
-                  <Trash2 color="#ef4444" size={20} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+                <IconButton icon={Trash2} accessibilityLabel={`Excluir ${item.title}`} onPress={() => handleDelete(item.id)} />
+              </Card>
+            );
+          }}
         />
+      )}
+      <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+        <Fab icon={Plus} accessibilityLabel="Nova recompensa" onPress={() => setFormVisible(true)} />
       </View>
-    </View>
+
+      <BottomSheet visible={formVisible} onClose={() => setFormVisible(false)}>
+        <MipoText variant="screenTitle" style={{ fontSize: 22 }}>
+          Nova recompensa
+        </MipoText>
+        <FieldLabel>Nome do prêmio</FieldLabel>
+        <Input placeholder="Ex: Jogo Catan" value={title} onChangeText={setTitle} />
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <FieldLabel>Preço (moedas)</FieldLabel>
+            <Input placeholder="0" keyboardType="numeric" value={price} onChangeText={setPrice} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <FieldLabel>Estoque inicial</FieldLabel>
+            <Input placeholder="0" keyboardType="numeric" value={stock} onChangeText={setStock} />
+          </View>
+        </View>
+        <Button
+          label="Cadastrar recompensa"
+          icon={Plus}
+          variant="red"
+          block
+          loading={createMutation.isPending}
+          disabled={!title.trim() || !price.trim() || !stock.trim()}
+          onPress={handleAddReward}
+          style={{ marginTop: 16 }}
+        />
+      </BottomSheet>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  centered: { justifyContent: "center", alignItems: "center" },
-  formContainer: {
-    padding: 20,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 15,
-  },
-  row: { flexDirection: "row", marginBottom: 10 },
-  inputGroup: { marginBottom: 10 },
-  input: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginBottom: 10,
-  },
-  addButton: {
-    backgroundColor: "#E11D48",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 5,
-  },
-  addButtonText: { color: "#fff", fontWeight: "bold", marginLeft: 8 },
-  listSection: { flex: 1, padding: 20 },
-  rewardCard: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-    elevation: 2,
-  },
-  rewardInfo: { flex: 1 },
-  rewardTitle: { fontSize: 16, fontWeight: "bold", color: "#1e293b" },
-  metaRow: { flexDirection: "row", marginTop: 5, gap: 15 },
-  metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  metaText: { fontSize: 12, color: "#64748b" },
-  actions: { flexDirection: "row", gap: 10 },
-  actionIcon: { padding: 5 },
-});

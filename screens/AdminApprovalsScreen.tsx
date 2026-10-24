@@ -1,26 +1,24 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  Modal,
-  TextInput,
-  ActivityIndicator,
-  ScrollView,
-} from "react-native";
-import {
-  Check,
-  X,
-  Clock,
-  User,
-  Calendar,
-  DollarSign,
-} from "lucide-react-native";
+import React, { useState } from "react";
+import { Alert, FlatList, View } from "react-native";
+import { Check, Clock, DollarSign, X } from "lucide-react-native";
 import { api } from "../services/api";
 import { useFocusEffect } from "@react-navigation/native";
+import {
+  Avatar,
+  Button,
+  BottomSheet,
+  Card,
+  Chip,
+  EmptyState,
+  Input,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  SegmentedControl,
+  useBottomReserve,
+} from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
 
 interface Event {
   id: string;
@@ -42,13 +40,15 @@ interface Reservation {
   createdAt: string;
 }
 
+type ApprovalTab = "events" | "reservations";
+
 export default function AdminApprovalsScreen() {
+  const { colors } = useTheme();
+  const bottomReserve = useBottomReserve(false);
   const [approvals, setApprovals] = useState<Event[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"events" | "reservations">(
-    "events",
-  );
+  const [activeTab, setActiveTab] = useState<ApprovalTab>("events");
 
   // Modal de Rejeição
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
@@ -70,7 +70,7 @@ export default function AdminApprovalsScreen() {
     try {
       const [eventsRes, reservationsRes] = await Promise.all([
         api.get("/events/pending").catch(() => ({ data: [] })),
-        api.get("/salinha/reservations/pending").catch(() => ({ data: [] })),
+        api.get("/rooms/salinha/reservations/pending").catch(() => ({ data: [] })),
       ]);
 
       setApprovals(eventsRes.data || []);
@@ -94,7 +94,7 @@ export default function AdminApprovalsScreen() {
 
   const handleApproveReservation = async (id: string) => {
     try {
-      await api.patch(`/salinha/reservations/${id}/approve`);
+      await api.patch(`/rooms/salinha/reservations/${id}/approve`);
       Alert.alert("Sucesso", "Reserva aprovada!");
       loadPendingData();
     } catch (error) {
@@ -118,7 +118,7 @@ export default function AdminApprovalsScreen() {
           reason: rejectReason,
         });
       } else {
-        await api.patch(`/salinha/reservations/${selectedId}/reject`, {
+        await api.patch(`/rooms/salinha/reservations/${selectedId}/reject`, {
           reason: rejectReason,
         });
       }
@@ -135,285 +135,131 @@ export default function AdminApprovalsScreen() {
     return `${date.getDate()}/${date.getMonth() + 1} às ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
   };
 
-  const renderEventItem = (item: Event) => (
-    <View style={styles.card}>
-      <View style={styles.info}>
-        <View style={styles.headerRow}>
-          <Text style={styles.titleText}>{item.title}</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.space}</Text>
-          </View>
-        </View>
-
-        <View style={styles.metaRow}>
-          <User size={14} color="#64748b" />
-          <Text style={styles.metaText}>Criado por: {item.creator?.name}</Text>
-        </View>
-
-        <View style={styles.metaRow}>
-          <Calendar size={14} color="#64748b" />
-          <Text style={styles.metaText}>{formatDate(item.dateTime)}</Text>
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.btnApprove}
-          onPress={() => handleApproveEvent(item.id)}
-        >
-          <Check color="#fff" size={20} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.btnReject}
-          onPress={() => openRejectModal(item.id, "event")}
-        >
-          <X color="#fff" size={20} />
-        </TouchableOpacity>
-      </View>
+  const renderActions = (onApprove: () => void, onReject: () => void) => (
+    <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+      <Button label="Aprovar" icon={Check} variant="lime" size="sm" onPress={onApprove} style={{ flex: 1 }} />
+      <Button label="Recusar" icon={X} variant="ghost" size="sm" onPress={onReject} style={{ flex: 1 }} />
     </View>
   );
 
-  const renderReservationItem = (item: Reservation) => (
-    <View style={styles.card}>
-      <View style={styles.info}>
-        <View style={styles.headerRow}>
-          <Text style={styles.titleText}>Reserva da Salinha</Text>
-          <View style={[styles.badge, { backgroundColor: "#fecaca" }]}>
-            <Text style={styles.badgeText}>
-              R$ {item.totalPrice.toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.metaRow}>
-          <User size={14} color="#64748b" />
-          <Text style={styles.metaText}>{item.user?.name}</Text>
-        </View>
-
-        <View style={styles.metaRow}>
-          <Calendar size={14} color="#64748b" />
-          <Text style={styles.metaText}>{item.date}</Text>
-        </View>
-
-        <View style={styles.metaRow}>
-          <Clock size={14} color="#64748b" />
-          <Text style={styles.metaText}>
-            {item.startTime} - {item.endTime}
-          </Text>
-        </View>
-
-        <View style={styles.paymentInfo}>
-          <DollarSign size={14} color="#10b981" />
-          <Text style={styles.paymentText}>
-            Aguardando comprovante no Instagram @mipojogos
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.btnApprove}
-          onPress={() => handleApproveReservation(item.id)}
-        >
-          <Check color="#fff" size={20} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.btnReject}
-          onPress={() => openRejectModal(item.id, "reservation")}
-        >
-          <X color="#fff" size={20} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  if (loading)
+  const renderEventItem = (item: Event) => {
+    const creatorName = item.creator?.name ?? "Usuário";
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#E11D48" />
-      </View>
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Avatar name={creatorName} id={item.id} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <MipoText variant="bodyBold" numberOfLines={1}>
+              {creatorName}
+            </MipoText>
+            <MipoText variant="caption" numberOfLines={1}>
+              {formatDate(item.dateTime)}
+            </MipoText>
+          </View>
+          <Chip label={item.space} tone="lilac" />
+        </View>
+        <MipoText variant="cardTitle" numberOfLines={2} style={{ marginTop: 10 }}>
+          {item.title}
+        </MipoText>
+        {renderActions(
+          () => handleApproveEvent(item.id),
+          () => openRejectModal(item.id, "event"),
+        )}
+      </Card>
     );
+  };
 
-  const isEmpty =
-    activeTab === "events" ? approvals.length === 0 : reservations.length === 0;
-
-  return (
-    <View style={styles.container}>
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "events" && styles.tabActive]}
-          onPress={() => setActiveTab("events")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "events" && styles.tabTextActive,
-            ]}
-          >
-            Eventos ({approvals.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "reservations" && styles.tabActive]}
-          onPress={() => setActiveTab("reservations")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "reservations" && styles.tabTextActive,
-            ]}
-          >
-            Salinhas ({reservations.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Content */}
-      <FlatList
-        data={activeTab === "events" ? approvals : reservations}
-        keyExtractor={(item: any) => item.id}
-        ListEmptyComponent={<Text style={styles.empty}>Nada pendente. ✨</Text>}
-        renderItem={({ item }) =>
-          activeTab === "events"
-            ? renderEventItem(item)
-            : renderReservationItem(item)
-        }
-        contentContainerStyle={isEmpty ? styles.emptyContainer : null}
-      />
-
-      {/* Modal para Motivo da Reprovação */}
-      <Modal visible={rejectModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>
-              {selectedType === "event"
-                ? "Motivo da Reprovação"
-                : "Motivo da Rejeição"}
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Ex: Data indisponível..."
-              value={rejectReason}
-              onChangeText={setRejectReason}
-              multiline
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setRejectModalVisible(false)}
-                style={styles.modalBtnCancel}
-              >
-                <Text style={styles.btnTextCancel}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmReject}
-                style={styles.modalBtnConfirm}
-              >
-                <Text style={styles.btnTextConfirm}>Confirmar Rejeição</Text>
-              </TouchableOpacity>
+  const renderReservationItem = (item: Reservation) => {
+    const userName = item.user?.name ?? "Usuário";
+    return (
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Avatar name={userName} id={item.userId} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <MipoText variant="bodyBold" numberOfLines={1}>
+              {userName}
+            </MipoText>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Clock size={12} color={colors.muted} strokeWidth={2.4} />
+              <MipoText variant="caption" numberOfLines={1}>
+                {`${item.date} · ${item.startTime} - ${item.endTime}`}
+              </MipoText>
             </View>
           </View>
+          <Chip label={`R$ ${item.totalPrice.toFixed(2)}`} tone="yellow" />
         </View>
-      </Modal>
-    </View>
+        <MipoText variant="cardTitle" numberOfLines={2} style={{ marginTop: 10 }}>
+          Reserva da Salinha
+        </MipoText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+          <DollarSign size={14} color={colors.muted} strokeWidth={2.4} />
+          <MipoText variant="caption" style={{ flex: 1 }}>
+            Aguardando comprovante no Instagram @mipojogos
+          </MipoText>
+        </View>
+        {renderActions(
+          () => handleApproveReservation(item.id),
+          () => openRejectModal(item.id, "reservation"),
+        )}
+      </Card>
+    );
+  };
+
+  return (
+    <Screen>
+      <ScreenHeader title="Aprovações" />
+      <SegmentedControl<ApprovalTab>
+        options={[
+          { value: "events", label: `Eventos (${approvals.length})` },
+          { value: "reservations", label: `Salinhas (${reservations.length})` },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+
+      {loading ? (
+        <LoadingState />
+      ) : activeTab === "events" ? (
+        <FlatList
+          data={approvals}
+          keyExtractor={(item) => item.id}
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState character="peao2" title="Nada esperando aprovação" />}
+          renderItem={({ item }) => renderEventItem(item)}
+        />
+      ) : (
+        <FlatList
+          data={reservations}
+          keyExtractor={(item) => item.id}
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState character="peao2" title="Nada esperando aprovação" />}
+          renderItem={({ item }) => renderReservationItem(item)}
+        />
+      )}
+
+      {/* Modal para Motivo da Reprovação */}
+      <BottomSheet visible={rejectModalVisible} onClose={() => setRejectModalVisible(false)}>
+        <MipoText variant="section">
+          {selectedType === "event"
+            ? "Motivo da Reprovação"
+            : "Motivo da Rejeição"}
+        </MipoText>
+        <Input
+          placeholder="Ex: Data indisponível..."
+          value={rejectReason}
+          onChangeText={setRejectReason}
+          multiline
+          containerStyle={{ marginTop: 12, minHeight: 90 }}
+        />
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+          <Button label="Cancelar" variant="ghost" onPress={() => setRejectModalVisible(false)} style={{ flex: 1 }} />
+          <Button label="Confirmar Rejeição" variant="red" onPress={confirmReject} style={{ flex: 1 }} />
+        </View>
+      </BottomSheet>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  empty: { textAlign: "center", color: "#94a3b8", marginTop: 50 },
-  emptyContainer: { flexGrow: 1, justifyContent: "center" },
-
-  // Tabs
-  tabsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabActive: {
-    borderBottomColor: "#c73636",
-  },
-  tabText: { fontSize: 14, color: "#64748b", fontWeight: "500" },
-  tabTextActive: { color: "#c73636", fontWeight: "bold" },
-
-  // Card
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 15,
-    marginBottom: 12,
-    marginHorizontal: 15,
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    elevation: 2,
-  },
-  info: { flex: 1 },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  titleText: { fontSize: 16, fontWeight: "bold", color: "#1e293b" },
-  badge: {
-    backgroundColor: "#e0e7ff",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  badgeText: { fontSize: 11, color: "#4338ca", fontWeight: "bold" },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
-  metaText: { fontSize: 12, color: "#64748b" },
-  paymentInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-    backgroundColor: "#f0fdf4",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  paymentText: { fontSize: 11, color: "#047857", fontWeight: "500" },
-  actions: { flexDirection: "row", gap: 10, paddingLeft: 10 },
-  btnApprove: { backgroundColor: "#10b981", padding: 10, borderRadius: 12 },
-  btnReject: { backgroundColor: "#ef4444", padding: 10, borderRadius: 12 },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalBox: { backgroundColor: "#fff", borderRadius: 16, padding: 20 },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 15,
-    color: "#1e293b",
-  },
-  modalInput: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
-    padding: 12,
-    height: 80,
-    textAlignVertical: "top",
-    marginBottom: 15,
-  },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  modalBtnCancel: { padding: 10 },
-  modalBtnConfirm: { backgroundColor: "#ef4444", padding: 10, borderRadius: 8 },
-  btnTextCancel: { color: "#64748b" },
-  btnTextConfirm: { color: "#fff", fontWeight: "bold" },
-});

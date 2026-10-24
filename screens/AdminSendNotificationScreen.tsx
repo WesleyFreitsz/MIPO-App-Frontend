@@ -1,29 +1,26 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
-  ActivityIndicator,
-} from "react-native";
+import { View, Alert, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Send, Bell, ShieldAlert, Gift, Info } from "lucide-react-native";
 import { api } from "../services/api";
+import { Button, Card, Character, Chip, FieldLabel, Input, MipoText, Screen, ScreenHeader } from "../components/ui";
 
-export default function AdminSendNotificationScreen({ navigation }: any) {
+interface AdminSendNotificationScreenProps {
+  navigation: Pick<NavigationProp<ParamListBase>, "goBack">;
+}
+
+const icons = [
+  { id: "bell", component: Bell, label: "Geral" },
+  { id: "shield", component: ShieldAlert, label: "Alerta" },
+  { id: "gift", component: Gift, label: "Promo" },
+  { id: "info", component: Info, label: "Info" },
+];
+
+export default function AdminSendNotificationScreen({ navigation }: AdminSendNotificationScreenProps) {
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("bell");
   const [loading, setLoading] = useState(false);
-
-  const icons = [
-    { id: "bell", component: Bell, label: "Geral" },
-    { id: "shield", component: ShieldAlert, label: "Alerta" },
-    { id: "gift", component: Gift, label: "Promo" },
-    { id: "info", component: Info, label: "Info" },
-  ];
 
   const handleSend = async () => {
     if (!title || !message)
@@ -46,120 +43,60 @@ export default function AdminSendNotificationScreen({ navigation }: any) {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ padding: 20 }}
-    >
-      <Text style={styles.label}>Título da Notificação</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Ex: Manutenção no Sábado"
-      />
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <Screen>
+        <ScreenHeader title="Enviar aviso" subtitle="Vai para todos os jogadores" />
+        <ScrollView
+          style={{ flex: 1, marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 16 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <FieldLabel>Tipo</FieldLabel>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {icons.map((item) => (
+              <Chip
+                key={item.id}
+                label={item.label}
+                icon={item.component}
+                tone={selectedIcon === item.id ? "active" : "neutral"}
+                selected={selectedIcon === item.id}
+                onPress={() => setSelectedIcon(item.id)}
+              />
+            ))}
+          </View>
 
-      <Text style={styles.label}>Mensagem</Text>
-      <TextInput
-        style={[styles.input, { height: 100, textAlignVertical: "top" }]}
-        value={message}
-        onChangeText={setMessage}
-        placeholder="Digite a mensagem para todos os usuários..."
-        multiline
-      />
+          <FieldLabel>Título</FieldLabel>
+          <Input value={title} onChangeText={setTitle} placeholder="Ex: Manutenção no sábado" />
 
-      <Text style={styles.label}>Ícone</Text>
-      <View style={styles.iconRow}>
-        {icons.map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={[
-              styles.iconBtn,
-              selectedIcon === item.id && styles.iconBtnActive,
-            ]}
-            onPress={() => setSelectedIcon(item.id)}
-          >
-            <item.component
-              color={selectedIcon === item.id ? "#fff" : "#64748b"}
-              size={24}
-            />
-            <Text
-              style={[
-                styles.iconLabel,
-                selectedIcon === item.id && { color: "#fff" },
-              ]}
-            >
-              {item.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+          <FieldLabel>Mensagem</FieldLabel>
+          <Input
+            value={message}
+            onChangeText={setMessage}
+            placeholder="Digite a mensagem para todos os usuários..."
+            multiline
+            containerStyle={{ minHeight: 70 }}
+          />
 
-      <TouchableOpacity
-        style={styles.sendBtn}
-        onPress={handleSend}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Send color="#fff" size={20} />
-            <Text style={styles.sendBtnText}>Enviar para Todos</Text>
-          </>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+          <FieldLabel>Prévia</FieldLabel>
+          <Card contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Character name="carta3" size={40} motion="none" />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+                <MipoText variant="cardTitle" numberOfLines={1} style={{ flex: 1 }}>
+                  {title || "Título do aviso"}
+                </MipoText>
+                <MipoText variant="micro">agora</MipoText>
+              </View>
+              <MipoText variant="caption" numberOfLines={2}>
+                {message || "A mensagem aparece aqui."}
+              </MipoText>
+            </View>
+          </Card>
+        </ScrollView>
+
+        <Button label="Enviar" icon={Send} variant="red" block loading={loading} onPress={handleSend} />
+      </Screen>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  label: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#475569",
-    marginBottom: 8,
-    marginTop: 15,
-  },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-  },
-  iconRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-  },
-  iconBtn: {
-    flex: 1,
-    alignItems: "center",
-    padding: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#fff",
-    marginHorizontal: 4,
-  },
-  iconBtnActive: { backgroundColor: "#E11D48", borderColor: "#E11D48" },
-  iconLabel: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 5,
-    fontWeight: "600",
-  },
-  sendBtn: {
-    backgroundColor: "#06b6d4",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-    borderRadius: 15,
-    marginTop: 40,
-    gap: 10,
-  },
-  sendBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-});

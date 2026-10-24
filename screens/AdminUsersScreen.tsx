@@ -1,28 +1,40 @@
-import React from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
-import { Coins, UserMinus } from "lucide-react-native";
+import React, { useState } from "react";
+import { Alert, FlatList, View } from "react-native";
+import { Coins, MoreVertical, UserMinus } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
+import {
+  Avatar,
+  BottomSheet,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  IconButton,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  useBottomReserve,
+} from "../components/ui";
 
 interface AdminUser {
   id: string;
   name: string;
+  email?: string;
+  avatarUrl?: string | null;
   coins: number;
   banned?: boolean;
 }
 
+type AdminUsersResponse = AdminUser[] | { data?: AdminUser[]; total?: number };
+
 export default function AdminUsersScreen() {
   const queryClient = useQueryClient();
+  const bottomReserve = useBottomReserve(false);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<AdminUsersResponse>({
     queryKey: ["users", "admin"],
     queryFn: async () => {
       const res = await api.get("/users/admin/list", {
@@ -48,7 +60,8 @@ export default function AdminUsersScreen() {
     },
   });
 
-  const users: AdminUser[] = data?.data || data || [];
+  const users: AdminUser[] = Array.isArray(data) ? data : data?.data || [];
+  const total = !Array.isArray(data) && typeof data?.total === "number" ? data.total : undefined;
 
   const handleAddCoins = (user: AdminUser) => {
     addCoinsMutation.mutate({ id: user.id, amount: 1 });
@@ -73,70 +86,84 @@ export default function AdminUsersScreen() {
     );
   };
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#E11D48" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={users}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={[styles.userCard, item.banned && styles.userCardBanned]}>
-            <View>
-              <Text style={styles.userName}>{item.name}</Text>
-              <Text style={styles.userCoins}>
-                💰 {item.coins ?? 0} moedas
-                {item.banned ? " • Banido" : ""}
-              </Text>
+    <Screen>
+      <ScreenHeader title="Usuários" subtitle={total !== undefined ? `${total} jogadores` : undefined} />
+      {isLoading ? (
+        <LoadingState />
+      ) : (
+        <FlatList
+          data={users}
+          keyExtractor={(item) => item.id}
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve, gap: 12 }}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <Card
+              style={item.banned ? { opacity: 0.6 } : undefined}
+              contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <Avatar id={item.id} name={item.name} uri={item.avatarUrl} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <MipoText variant="cardTitle" numberOfLines={1}>
+                  {item.name}
+                </MipoText>
+                {item.email ? (
+                  <MipoText variant="caption" numberOfLines={1}>
+                    {item.email}
+                  </MipoText>
+                ) : null}
+                <View style={{ flexDirection: "row", gap: 6, marginTop: 2 }}>
+                  <Chip tone="yellow" icon={Coins} label={`${item.coins ?? 0} moedas`} />
+                  {item.banned ? <Chip tone="red" label="Banido" /> : null}
+                </View>
+              </View>
+              <IconButton
+                icon={MoreVertical}
+                accessibilityLabel={`Ações de ${item.name}`}
+                onPress={() => setSelectedUser(item)}
+              />
+            </Card>
+          )}
+          ListEmptyComponent={<EmptyState character="peao2" title="Nenhum usuário encontrado." />}
+        />
+      )}
+
+      <BottomSheet visible={selectedUser !== null} onClose={() => setSelectedUser(null)}>
+        {selectedUser ? (
+          <View style={{ gap: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <Avatar id={selectedUser.id} name={selectedUser.name} uri={selectedUser.avatarUrl} />
+              <MipoText variant="screenTitle" numberOfLines={1} style={{ flex: 1, fontSize: 22 }}>
+                {selectedUser.name}
+              </MipoText>
             </View>
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => handleAddCoins(item)}>
-                <Coins color="#f59e0b" size={24} />
-              </TouchableOpacity>
-              {!item.banned && (
-                <TouchableOpacity
-                  onPress={() => handleBan(item)}
-                  style={styles.banButton}
-                >
-                  <UserMinus color="#ef4444" size={24} />
-                </TouchableOpacity>
-              )}
-            </View>
+            <Button
+              label="Adicionar 1 moeda"
+              icon={Coins}
+              block
+              onPress={() => {
+                const user = selectedUser;
+                setSelectedUser(null);
+                handleAddCoins(user);
+              }}
+            />
+            {!selectedUser.banned ? (
+              <Button
+                label="Banir usuário"
+                icon={UserMinus}
+                variant="red"
+                block
+                onPress={() => {
+                  const user = selectedUser;
+                  setSelectedUser(null);
+                  handleBan(user);
+                }}
+              />
+            ) : null}
           </View>
-        )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Nenhum usuário encontrado.</Text>
-          </View>
-        }
-      />
-    </View>
+        ) : null}
+      </BottomSheet>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc", padding: 15 },
-  centered: { justifyContent: "center", alignItems: "center" },
-  userCard: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 15,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  userCardBanned: { opacity: 0.6 },
-  userName: { fontSize: 16, fontWeight: "bold", color: "#1e293b" },
-  userCoins: { fontSize: 14, color: "#64748b" },
-  actions: { flexDirection: "row", gap: 15 },
-  banButton: { marginLeft: 0 },
-  empty: { padding: 40, alignItems: "center" },
-  emptyText: { color: "#64748b" },
-});

@@ -1,29 +1,52 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  Alert,
-  ActivityIndicator,
-  SafeAreaView,
-} from "react-native";
-import {
-  ChevronLeft,
-  AlertTriangle,
-  ShieldAlert,
-  Trash2,
-  Ban,
-} from "lucide-react-native";
+import { View, FlatList, Image, Alert } from "react-native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
+import { AlertTriangle, Trash2, Ban } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
+import {
+  Avatar,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  useBottomReserve,
+} from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
+import { radius, stroke } from "../theme/tokens";
+import { relativeTime } from "./social/socialFormat";
 
-export default function AdminReportsScreen({ navigation }: any) {
+interface ReportUser {
+  id: string;
+  name?: string;
+  nickname?: string;
+  avatarUrl?: string | null;
+}
+
+interface Denuncia {
+  id: string;
+  reason: string;
+  imageUrl?: string | null;
+  createdAt?: string;
+  reporterUser?: ReportUser | null;
+  reportedUser: ReportUser;
+  post?: { content: string } | null;
+}
+
+interface AdminReportsScreenProps {
+  navigation: Pick<NavigationProp<ParamListBase>, "goBack">;
+}
+
+export default function AdminReportsScreen({ navigation }: AdminReportsScreenProps) {
   const queryClient = useQueryClient();
+  const { colors } = useTheme();
+  const bottomReserve = useBottomReserve(false);
 
-  const { data: reports, isLoading } = useQuery({
+  const { data: reports, isLoading } = useQuery<Denuncia[]>({
     queryKey: ["admin_reports"],
     queryFn: async () => (await api.get("/reports")).data,
   });
@@ -44,199 +67,125 @@ export default function AdminReportsScreen({ navigation }: any) {
     },
   });
 
-  if (isLoading) {
+  const blockStyle = {
+    backgroundColor: colors.sunken,
+    borderRadius: radius.input,
+    padding: 10,
+    marginTop: 10,
+  };
+
+  const renderReport = ({ item }: { item: Denuncia }) => {
+    const reportedName = item.reportedUser?.nickname || item.reportedUser?.name || "";
+    const reporterName = item.reporterUser?.nickname || item.reporterUser?.name || "";
     return (
-      <SafeAreaView style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#c73636" />
-      </SafeAreaView>
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Chip tone="red" icon={AlertTriangle} label="Denúncia de post" />
+          {item.createdAt ? <MipoText variant="micro">{relativeTime(item.createdAt)}</MipoText> : null}
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <Avatar id={item.reportedUser?.id ?? item.id} name={reportedName || "?"} uri={item.reportedUser?.avatarUrl} />
+          <View style={{ flex: 1 }}>
+            <MipoText variant="cardTitle" color="red" numberOfLines={1}>
+              @{reportedName}
+            </MipoText>
+            <MipoText variant="micro" numberOfLines={1}>
+              Denunciado por @{reporterName}
+            </MipoText>
+          </View>
+        </View>
+
+        <MipoText variant="label" style={{ marginTop: 12 }}>
+          Motivo
+        </MipoText>
+        <MipoText variant="bodyBold">{item.reason}</MipoText>
+
+        {item.imageUrl && (
+          <View style={{ marginTop: 10 }}>
+            <MipoText variant="label">Print anexado</MipoText>
+            <Image
+              source={{ uri: item.imageUrl }}
+              resizeMode="cover"
+              style={{
+                width: "100%",
+                height: 200,
+                marginTop: 6,
+                borderRadius: radius.input,
+                borderWidth: stroke.regular,
+                borderColor: colors.line,
+              }}
+            />
+          </View>
+        )}
+
+        {item.post && (
+          <View style={blockStyle}>
+            <MipoText variant="label">Post original</MipoText>
+            <MipoText variant="body" numberOfLines={4} style={{ fontStyle: "italic", marginTop: 2 }}>
+              {item.post.content}
+            </MipoText>
+          </View>
+        )}
+
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+          <Button
+            label="Ignorar"
+            icon={Trash2}
+            variant="ghost"
+            size="sm"
+            block
+            accessibilityLabel="Ignorar denúncia"
+            style={{ flex: 1 }}
+            onPress={() => dismissReportMutation.mutate(item.id)}
+          />
+          <Button
+            label="Banir acusado"
+            icon={Ban}
+            variant="red"
+            size="sm"
+            block
+            style={{ flex: 1 }}
+            onPress={() => {
+              Alert.alert(
+                "Atenção",
+                "Tem certeza que deseja BANIR este usuário?",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Banir",
+                    style: "destructive",
+                    onPress: () => banUserMutation.mutate(item.reportedUser.id),
+                  },
+                ],
+              );
+            }}
+          />
+        </View>
+      </Card>
     );
-  }
-
-  const renderReport = ({ item }: any) => (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <AlertTriangle color="#ef4444" size={20} />
-        <Text style={styles.headerTitle}>Denúncia de Post</Text>
-      </View>
-
-      <View style={styles.usersInfo}>
-        <Text style={styles.label}>Denunciante:</Text>
-        <Text style={styles.value}>
-          @{item.reporterUser?.nickname || item.reporterUser?.name}
-        </Text>
-      </View>
-
-      <View style={styles.usersInfo}>
-        <Text style={styles.label}>Acusado (Postou):</Text>
-        <Text style={[styles.value, { color: "#ef4444", fontWeight: "bold" }]}>
-          @{item.reportedUser?.nickname || item.reportedUser?.name}
-        </Text>
-      </View>
-
-      <View style={styles.reasonBox}>
-        <Text style={styles.label}>Motivo / Descrição:</Text>
-        <Text style={styles.reasonText}>{item.reason}</Text>
-      </View>
-
-      {item.imageUrl && (
-        <View style={{ marginTop: 10 }}>
-          <Text style={styles.label}>Print Anexado:</Text>
-          <Image source={{ uri: item.imageUrl }} style={styles.printImage} />
-        </View>
-      )}
-
-      {item.post && (
-        <View style={styles.postBox}>
-          <Text style={styles.label}>Post Original:</Text>
-          <Text style={styles.postText}>{item.post.content}</Text>
-        </View>
-      )}
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.btnDismiss]}
-          onPress={() => dismissReportMutation.mutate(item.id)}
-        >
-          <Trash2 color="#475569" size={16} />
-          <Text style={styles.btnTextDismiss}>Ignorar Denúncia</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.btnBan]}
-          onPress={() => {
-            Alert.alert(
-              "Atenção",
-              "Tem certeza que deseja BANIR este usuário?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Banir",
-                  style: "destructive",
-                  onPress: () => banUserMutation.mutate(item.reportedUser.id),
-                },
-              ],
-            );
-          }}
-        >
-          <Ban color="#fff" size={16} />
-          <Text style={styles.btnTextBan}>Banir Acusado</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.appBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft color="#1e293b" size={28} />
-        </TouchableOpacity>
-        <ShieldAlert
-          color="#ef4444"
-          size={24}
-          style={{ marginLeft: 15, marginRight: 8 }}
-        />
-        <Text style={styles.appBarTitle}>Painel de Denúncias</Text>
-      </View>
-
-      <FlatList
-        data={reports}
-        keyExtractor={(i) => i.id}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={renderReport}
-        ListEmptyComponent={
-          <Text
-            style={{ textAlign: "center", marginTop: 40, color: "#64748b" }}
-          >
-            Nenhuma denúncia pendente.
-          </Text>
-        }
+    <Screen>
+      <ScreenHeader
+        title="Denúncias"
+        subtitle={reports && reports.length > 0 ? `${reports.length} pendentes` : undefined}
+        onBack={() => navigation.goBack()}
       />
-    </SafeAreaView>
+      {isLoading ? (
+        <LoadingState />
+      ) : (
+        <FlatList
+          data={reports}
+          keyExtractor={(i) => i.id}
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve, gap: 14 }}
+          showsVerticalScrollIndicator={false}
+          renderItem={renderReport}
+          ListEmptyComponent={<EmptyState character="peao2" title="Nenhuma denúncia" message="Tudo tranquilo por aqui." />}
+        />
+      )}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  appBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  appBarTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b" },
-
-  card: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#ef4444",
-    marginLeft: 8,
-  },
-
-  usersInfo: { flexDirection: "row", marginBottom: 6 },
-  label: { fontSize: 14, fontWeight: "bold", color: "#64748b", marginRight: 6 },
-  value: { fontSize: 14, color: "#1e293b" },
-
-  reasonBox: {
-    backgroundColor: "#fef2f2",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  reasonText: { fontSize: 14, color: "#991b1b", marginTop: 4 },
-
-  printImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-    marginTop: 6,
-    resizeMode: "cover",
-  },
-
-  postBox: {
-    backgroundColor: "#f1f5f9",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: "#cbd5e1",
-  },
-  postText: {
-    fontSize: 14,
-    color: "#334155",
-    fontStyle: "italic",
-    marginTop: 4,
-  },
-
-  actions: { flexDirection: "row", marginTop: 16, gap: 10 },
-  actionBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-
-  btnDismiss: { backgroundColor: "#f1f5f9" },
-  btnTextDismiss: { color: "#475569", fontWeight: "bold", fontSize: 13 },
-
-  btnBan: { backgroundColor: "#ef4444" },
-  btnTextBan: { color: "#fff", fontWeight: "bold", fontSize: 13 },
-});

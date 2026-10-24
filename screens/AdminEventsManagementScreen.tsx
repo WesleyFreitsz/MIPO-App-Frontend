@@ -1,34 +1,73 @@
 import React, { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  Modal,
-  TextInput,
-  SafeAreaView,
-} from "react-native";
-import {
-  Edit3,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Calendar,
-  Clock,
-  ChevronRight,
-  AlertCircle,
-} from "lucide-react-native";
+import { Alert, FlatList, ScrollView, View } from "react-native";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import {
+  BottomSheet,
+  Button,
+  Chip,
+  type ChipTone,
+  EmptyState,
+  Fab,
+  FieldLabel,
+  IconButton,
+  Input,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  useBottomReserve,
+} from "../components/ui";
+import { EventoDetail } from "../types";
+import { EventoCard } from "./evento/EventoCard";
 
-export default function AdminEventsManagementScreen({ navigation }: any) {
+interface AdminEventsManagementScreenProps {
+  navigation: Pick<NavigationProp<ParamListBase>, "navigate" | "goBack">;
+}
+
+interface AdminEvento extends EventoDetail {
+  creator?: { id: string; name: string } | null;
+}
+
+interface ApiError {
+  response?: { data?: { message?: string } };
+  message?: string;
+}
+
+type StatusFilter = "ALL" | "PENDING" | "APPROVED" | "REPROVED" | "CONCLUDED";
+
+const statusFilters: { value: StatusFilter; label: string }[] = [
+  { value: "ALL", label: "Todos" },
+  { value: "PENDING", label: "Pendente" },
+  { value: "APPROVED", label: "Aprovado" },
+  { value: "REPROVED", label: "Recusado" },
+  { value: "CONCLUDED", label: "Encerrado" },
+];
+
+function statusChip(status: string | undefined): { label: string; tone: ChipTone } {
+  switch (status) {
+    case "APPROVED":
+      return { label: "Aprovado", tone: "lime" };
+    case "PENDING":
+      return { label: "Pendente", tone: "yellow" };
+    case "CONCLUDED":
+      return { label: "Encerrado", tone: "neutral" };
+    case "REPROVED":
+      return { label: "Recusado", tone: "red" };
+    default:
+      return { label: status ?? "", tone: "neutral" };
+  }
+}
+
+export default function AdminEventsManagementScreen({ navigation }: AdminEventsManagementScreenProps) {
   const { user } = useAuth();
-  const [events, setEvents] = useState<any[]>([]);
+  const bottomReserve = useBottomReserve(false);
+  const [events, setEvents] = useState<AdminEvento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -37,9 +76,10 @@ export default function AdminEventsManagementScreen({ navigation }: any) {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/events/admin/all");
+      const response = await api.get<AdminEvento[]>("/events/admin/all");
       setEvents(response.data);
-    } catch (error: any) {
+    } catch (caught) {
+      const error = caught as ApiError;
       console.log("Detalhes do erro:", error.response?.data || error.message);
       Alert.alert(
         "Erro",
@@ -106,275 +146,123 @@ export default function AdminEventsManagementScreen({ navigation }: any) {
     ]);
   };
 
-  const getStatusStyle = (status: string) => {
-    switch (status) {
-      case "APPROVED":
-        return { bg: "#dcfce7", text: "#166534", label: "Aprovado" };
-      case "PENDING":
-        return { bg: "#fef3c7", text: "#92400e", label: "Pendente" };
-      case "CONCLUDED":
-        return { bg: "#f1f5f9", text: "#475569", label: "Encerrado" };
-      case "REPROVED":
-        return { bg: "#fee2e2", text: "#991b1b", label: "Recusado" };
-      default:
-        return { bg: "#e2e8f0", text: "#64748b", label: status };
-    }
+  const closeRejectSheet = () => {
+    setRejectModalVisible(false);
+    setReason("");
   };
 
-  const renderEvent = ({ item }: any) => {
-    const statusInfo = getStatusStyle(item.status);
+  const editEvent = (id: string) => navigation.navigate("AdminCreateEvent", { eventId: id });
+
+  const visibleEvents = statusFilter === "ALL" ? events : events.filter((item) => item.status === statusFilter);
+
+  const renderEvent = ({ item }: { item: AdminEvento }) => {
+    const status = statusChip(item.status);
     const isAdmin = user?.role === "ADMIN";
     const isOwner = item.creator?.id === user?.id;
     const canManage = isAdmin || isOwner;
+    const isPending = item.status === "PENDING";
 
     return (
-      <View
-        style={[styles.card, item.status === "PENDING" && styles.pendingCard]}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.info}>
-            <Text style={styles.title} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <View
-              style={[styles.statusBadge, { backgroundColor: statusInfo.bg }]}
-            >
-              <Text style={[styles.statusText, { color: statusInfo.text }]}>
-                {statusInfo.label}
-              </Text>
-            </View>
+      <View style={{ gap: 8 }}>
+        <EventoCard
+          evento={item}
+          variant="lista"
+          onPress={() => {
+            if (canManage) editEvent(item.id);
+          }}
+          trailing={<Chip label={status.label} tone={status.tone} />}
+        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            {isPending ? <Chip label="PEDIDO DE JOGADOR" tone="lilac" /> : null}
+            <MipoText variant="caption" numberOfLines={1}>
+              {`Por: ${item.creator?.name || "Usuário"}`}
+            </MipoText>
           </View>
-          <View style={styles.dateInfo}>
-            <Calendar size={14} color="#64748b" />
-            <Text style={styles.dateText}>
-              {new Date(item.dateTime).toLocaleDateString()}
-            </Text>
-          </View>
+          {canManage ? (
+            <>
+              <IconButton icon={Pencil} accessibilityLabel={`Editar ${item.title}`} onPress={() => editEvent(item.id)} size={36} />
+              <IconButton icon={Trash2} accessibilityLabel={`Excluir ${item.title}`} onPress={() => handleDelete(item.id)} size={36} />
+            </>
+          ) : null}
         </View>
-
-        <View style={styles.footerRow}>
-          <Text style={styles.creatorText}>
-            Por: {item.creator?.name || "Usuário"}
-          </Text>
-
-          <View style={styles.actions}>
-            {isAdmin && item.status === "PENDING" && (
-              <>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleApprove(item.id)}
-                >
-                  <CheckCircle color="#10b981" size={22} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => {
-                    setSelectedId(item.id);
-                    setRejectModalVisible(true);
-                  }}
-                >
-                  <XCircle color="#ef4444" size={22} />
-                </TouchableOpacity>
-              </>
-            )}
-            {canManage && (
-              <>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() =>
-                    navigation.navigate("AdminCreateEvent", {
-                      eventId: item.id,
-                    })
-                  }
-                >
-                  <Edit3 color="#6366f1" size={20} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleDelete(item.id)}
-                >
-                  <Trash2 color="#ef4444" size={20} />
-                </TouchableOpacity>
-              </>
-            )}
+        {isAdmin && isPending ? (
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button label="Aprovar" icon={Check} variant="lime" size="sm" onPress={() => handleApprove(item.id)} style={{ flex: 1 }} />
+            <Button
+              label="Recusar"
+              icon={X}
+              variant="ghost"
+              size="sm"
+              onPress={() => {
+                setSelectedId(item.id);
+                setRejectModalVisible(true);
+              }}
+              style={{ flex: 1 }}
+            />
           </View>
-        </View>
+        ) : null}
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Gestão de Eventos</Text>
-        <Text style={styles.headerSubtitle}>
-          {events.length} eventos registrados
-        </Text>
+    <Screen>
+      <ScreenHeader title="Eventos" subtitle={`${events.length} eventos registrados`} />
+
+      <View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -14, flexGrow: 0 }}
+          contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 4 }}
+        >
+          {statusFilters.map((filter) => (
+            <Chip
+              key={filter.value}
+              label={filter.label}
+              tone={statusFilter === filter.value ? "active" : "neutral"}
+              selected={statusFilter === filter.value}
+              onPress={() => setStatusFilter(filter.value)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#E11D48" />
-        </View>
+        <LoadingState />
       ) : (
         <FlatList
-          data={events}
+          data={visibleEvents}
           keyExtractor={(item) => item.id}
           renderItem={renderEvent}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <AlertCircle size={48} color="#cbd5e1" />
-              <Text style={styles.emptyText}>Nenhum evento encontrado.</Text>
-            </View>
-          }
+          style={{ marginHorizontal: -14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: bottomReserve + 80, gap: 18 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState character="peao2" title="Nenhum evento encontrado." />}
         />
       )}
 
-      {/* Modal de Rejeição Estilizado */}
-      <Modal visible={rejectModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Recusar Evento</Text>
-            <Text style={styles.modalLabel}>Motivo da Recusa:</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Ex: Local indisponível nesta data..."
-              multiline
-              numberOfLines={4}
-            />
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalBtnCancel}
-                onPress={() => {
-                  setRejectModalVisible(false);
-                  setReason("");
-                }}
-              >
-                <Text style={styles.btnTextCancel}>Voltar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalBtnConfirm}
-                onPress={handleReject}
-              >
-                <Text style={styles.btnTextConfirm}>Confirmar Recusa</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+        <Fab icon={Plus} accessibilityLabel="Criar evento" onPress={() => navigation.navigate("AdminCreateEvent")} />
+      </View>
+
+      <BottomSheet visible={rejectModalVisible} onClose={closeRejectSheet}>
+        <MipoText variant="section">Recusar Evento</MipoText>
+        <FieldLabel>Motivo da recusa</FieldLabel>
+        <Input
+          value={reason}
+          onChangeText={setReason}
+          placeholder="Ex: Local indisponível nesta data..."
+          multiline
+          numberOfLines={4}
+          containerStyle={{ minHeight: 100 }}
+        />
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+          <Button label="Voltar" variant="ghost" onPress={closeRejectSheet} style={{ flex: 1 }} />
+          <Button label="Confirmar Recusa" variant="red" onPress={handleReject} style={{ flex: 1 }} />
         </View>
-      </Modal>
-    </SafeAreaView>
+      </BottomSheet>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  header: {
-    padding: 20,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  headerTitle: { fontSize: 22, fontWeight: "bold", color: "#1e293b" },
-  headerSubtitle: { fontSize: 14, color: "#64748b", marginTop: 2 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  list: { padding: 16 },
-  card: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  pendingCard: { borderColor: "#fbbf24", backgroundColor: "#fffbeb" },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  info: { flex: 1 },
-  title: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 6,
-  },
-  statusBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  statusText: { fontSize: 10, fontWeight: "bold" },
-  dateInfo: { flexDirection: "row", alignItems: "center", gap: 4 },
-  dateText: { fontSize: 12, color: "#64748b" },
-  footerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-    paddingTop: 10,
-  },
-  creatorText: { fontSize: 12, color: "#94a3b8", fontStyle: "italic" },
-  actions: { flexDirection: "row", gap: 8 },
-  actionBtn: {
-    padding: 6,
-    backgroundColor: "#f8fafc",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-
-  // Empty State
-  emptyContainer: { alignItems: "center", marginTop: 100 },
-  emptyText: { marginTop: 12, color: "#94a3b8", fontSize: 16 },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modalBox: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 15,
-  },
-  modalLabel: { fontSize: 14, color: "#64748b", marginBottom: 8 },
-  modalInput: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 12,
-    padding: 12,
-    textAlignVertical: "top",
-    height: 100,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginBottom: 20,
-  },
-  modalFooter: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
-  modalBtnCancel: { paddingVertical: 10, paddingHorizontal: 16 },
-  modalBtnConfirm: {
-    backgroundColor: "#ef4444",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-  },
-  btnTextCancel: { color: "#64748b", fontWeight: "600" },
-  btnTextConfirm: { color: "#fff", fontWeight: "bold" },
-});

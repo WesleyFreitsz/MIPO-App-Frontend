@@ -1,55 +1,60 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  SafeAreaView,
-} from "react-native";
-import {
-  TrendingUp,
-  TrendingDown,
-  ArrowUpRight,
-  ArrowDownRight,
-} from "lucide-react-native";
+import { RefreshControl, View } from "react-native";
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
+import {
+  Card,
+  Character,
+  IconBox,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  SectionHeader,
+} from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
 
-const StatCard = ({ title, value, type }: any) => (
-  <View style={styles.statCard}>
-    <View
-      style={[
-        styles.iconCircle,
-        { backgroundColor: type === "in" ? "#dcfce7" : "#fee2e2" },
-      ]}
-    >
-      {type === "in" ? (
-        <TrendingUp size={20} color="#166534" />
-      ) : (
-        <TrendingDown size={20} color="#991b1b" />
-      )}
-    </View>
-    <Text style={styles.statLabel}>{title}</Text>
-    <Text
-      style={[
-        styles.statValue,
-        { color: type === "in" ? "#166534" : "#991b1b" },
-      ]}
-    >
+type TransactionType = "in" | "out";
+
+interface FinanceSummary {
+  totalIn?: number;
+  totalOut?: number;
+  balance?: number;
+}
+
+interface FinanceTransaction {
+  id: string;
+  type: TransactionType;
+  description: string;
+  value: number | string;
+  createdAt?: string;
+  date?: string;
+}
+
+interface StatCardProps {
+  title: string;
+  value: number;
+  type: TransactionType;
+}
+
+const StatCard = ({ title, value, type }: StatCardProps) => (
+  <Card style={{ flex: 1 }} contentStyle={{ gap: 6 }}>
+    <IconBox icon={type === "in" ? TrendingUp : TrendingDown} tone={type === "in" ? "teal" : "red"} />
+    <MipoText variant="caption">{title}</MipoText>
+    <MipoText variant="cardTitle" color={type === "in" ? "text" : "red"} numberOfLines={1}>
       R$ {Number(value).toFixed(2)}
-    </Text>
-  </View>
+    </MipoText>
+  </Card>
 );
 
 export default function AdminFinanceScreen() {
+  const { colors } = useTheme();
   const {
     data: summary,
     isLoading: summaryLoading,
     refetch: refetchSummary,
-  } = useQuery({
+  } = useQuery<FinanceSummary>({
     queryKey: ["finance", "summary"],
     queryFn: async () => {
       const res = await api.get("/finance/summary");
@@ -61,7 +66,7 @@ export default function AdminFinanceScreen() {
     data: transactions = [],
     isLoading: transactionsLoading,
     refetch: refetchTransactions,
-  } = useQuery({
+  } = useQuery<FinanceTransaction[]>({
     queryKey: ["finance", "transactions"],
     queryFn: async () => {
       const res = await api.get("/finance/transactions", {
@@ -80,9 +85,10 @@ export default function AdminFinanceScreen() {
 
   if (isLoading && !summary && !transactions?.length) {
     return (
-      <SafeAreaView style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#E11D48" />
-      </SafeAreaView>
+      <Screen>
+        <ScreenHeader title="Financeiro" />
+        <LoadingState />
+      </Screen>
     );
   }
 
@@ -99,143 +105,52 @@ export default function AdminFinanceScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={onRefresh}
-            colors={["#E11D48"]}
-          />
-        }
-      >
-        <Text style={styles.title}>Resumo Financeiro 📊</Text>
+    <Screen
+      scroll
+      refreshControl={
+        <RefreshControl refreshing={isLoading} onRefresh={onRefresh} colors={[colors.pink]} tintColor={colors.pink} />
+      }
+    >
+      <ScreenHeader title="Financeiro" />
 
-        <View style={styles.mainBalance}>
-          <Text style={styles.balanceLabel}>Saldo em Caixa</Text>
-          <Text style={styles.balanceValue}>
+      <Card tone="lime" contentStyle={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 16 }}>
+        <View style={{ flex: 1 }}>
+          <MipoText variant="label" color="onColor">
+            Saldo em caixa
+          </MipoText>
+          <MipoText variant="hero" color="onColor" numberOfLines={1} adjustsFontSizeToFit>
             R$ {Number(balance).toFixed(2)}
-          </Text>
+          </MipoText>
         </View>
+        <Character name="moeda3" size={72} motion="wiggle" />
+      </Card>
 
-        <View style={styles.statsRow}>
-          <StatCard title="Entradas" value={totalIn} type="in" />
-          <StatCard title="Saídas" value={totalOut} type="out" />
+      <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+        <StatCard title="Entradas" value={totalIn} type="in" />
+        <StatCard title="Saídas" value={totalOut} type="out" />
+      </View>
+
+      <SectionHeader title="Transações recentes" />
+      {transactions.length === 0 ? (
+        <MipoText variant="caption">Nenhuma transação registrada.</MipoText>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {transactions.map((item) => (
+            <Card key={item.id} contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <IconBox icon={item.type === "in" ? ArrowUpRight : ArrowDownRight} tone={item.type === "in" ? "teal" : "red"} />
+              <View style={{ flex: 1 }}>
+                <MipoText variant="bodyBold" numberOfLines={2}>
+                  {item.description}
+                </MipoText>
+                <MipoText variant="micro">{formatDate(item.createdAt || item.date || "")}</MipoText>
+              </View>
+              <MipoText variant="cardTitle" color={item.type === "in" ? "text" : "red"}>
+                {item.type === "in" ? "+" : "-"} R$ {Number(item.value).toFixed(2)}
+              </MipoText>
+            </Card>
+          ))}
         </View>
-
-        <Text style={styles.sectionTitle}>Transações Recentes</Text>
-        {transactions.length === 0 ? (
-          <Text style={styles.emptyText}>Nenhuma transação registrada.</Text>
-        ) : (
-          transactions.map((item: any) => (
-            <View key={item.id} style={styles.transactionCard}>
-              <View style={styles.transIcon}>
-                {item.type === "in" ? (
-                  <ArrowUpRight color="#166534" size={20} />
-                ) : (
-                  <ArrowDownRight color="#991b1b" size={20} />
-                )}
-              </View>
-              <View style={styles.transDetails}>
-                <Text style={styles.transDesc}>{item.description}</Text>
-                <Text style={styles.transDate}>
-                  {formatDate(item.createdAt || item.date)}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.transValue,
-                  { color: item.type === "in" ? "#166534" : "#991b1b" },
-                ]}
-              >
-                {item.type === "in" ? "+" : "-"} R${" "}
-                {Number(item.value).toFixed(2)}
-              </Text>
-            </View>
-          ))
-        )}
-      </ScrollView>
-    </SafeAreaView>
+      )}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  centered: { justifyContent: "center", alignItems: "center" },
-  scroll: { padding: 20 },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 20,
-  },
-  mainBalance: {
-    backgroundColor: "#E11D48",
-    padding: 25,
-    borderRadius: 24,
-    alignItems: "center",
-    marginBottom: 20,
-    elevation: 4,
-  },
-  balanceLabel: { color: "rgba(255,255,255,0.8)", fontSize: 16 },
-  balanceValue: {
-    color: "#fff",
-    fontSize: 32,
-    fontWeight: "bold",
-    marginTop: 5,
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 25,
-  },
-  statCard: {
-    backgroundColor: "#fff",
-    width: "48%",
-    padding: 15,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  statLabel: { fontSize: 14, color: "#64748b" },
-  statValue: { fontSize: 18, fontWeight: "bold", marginTop: 5 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 15,
-  },
-  emptyText: { color: "#64748b", marginBottom: 20 },
-  transactionCard: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  transIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#f8fafc",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  transDetails: { flex: 1 },
-  transDesc: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
-  transDate: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-  transValue: { fontSize: 15, fontWeight: "bold" },
-});
