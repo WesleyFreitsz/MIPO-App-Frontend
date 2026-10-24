@@ -119,4 +119,19 @@ export const typeScale = {
   micro: 10.5,
 } as const;
 
+export const chatNameColors = [
+  "#FF5733",
+  "#33A1FF",
+  "#9B59B6",
+  "#2ECC71",
+  "#E67E22",
+  "#E74C3C",
+  "#1ABC9C",
+  "#F1C40F",
+  "#34495E",
+  "#FF1493",
+  "#00CED1",
+  "#FF8C00",
+] as const;
+
 export { contrastRatio } from "./contrast";
