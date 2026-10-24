@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIPO · Festa Mipo</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+:root, [data-theme="light"] {
+  --bg:#FFF8E7; --hero:#F6E22D; --surface:#FFFFFF; --surface2:#FFF1CC; --sunken:#F3E7C9;
+  --text:#1E1414; --muted:#6B5A52; --line:#1E1414; --shadow:#1E1414;
+  --yellow:#F6E22D; --red:#E0262B; --pink:#E3156B; --lime:#B9D531; --teal:#7CC8B4; --blue:#4A6FD8; --lilac:#C9B6F0; --orange:#F59A23;
+  --on-color:#1E1414; --on-pink:#FFFFFF; --tab:#1E1414; --tab-text:#F6E22D; --tab-muted:#8D7B5E;
+  --page:#2a2226; --page-text:#FFF3D6;
+}
+[data-theme="dark"] {
+  --bg:#17111C; --hero:#3A1530; --surface:#261C2C; --surface2:#33263A; --sunken:#120D16;
+  --text:#FFF3D6; --muted:#B9A8B8; --line:#000000; --shadow:#000000;
+  --yellow:#F4DB3A; --red:#F0474B; --pink:#F0418A; --lime:#C3DD4A; --teal:#7CC8B4; --blue:#7B95F0; --lilac:#B9A2EE; --orange:#F7A940;
+  --on-color:#1E1414; --on-pink:#FFFFFF; --tab:#0B070D; --tab-text:#F4DB3A; --tab-muted:#7C6A80;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--page-text); font-family:'Nunito',sans-serif; }
+.toolbar { position:sticky; top:0; z-index:50; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px 20px; background:#1b1518; border-bottom:2px solid #000; }
+.toolbar .logo { font-family:'Fredoka'; font-weight:700; font-size:26px; color:#E0262B; margin-right:8px; text-shadow:2px 2px 0 #F6E22D; }
+.tbtn { font-family:'Fredoka'; font-weight:600; font-size:15px; padding:8px 14px; border-radius:12px; border:2.5px solid #000; background:#FFF8E7; color:#1E1414; box-shadow:3px 3px 0 #000; cursor:pointer; transition:transform .08s, box-shadow .08s; }
+.tbtn:active { transform:translate(3px,3px); box-shadow:0 0 0 #000; }
+.tbtn.on { background:#F6E22D; }
+.toolbar .hint { font-size:13px; opacity:.75; margin-left:auto; }
+.intro { padding:22px 20px 0; max-width:1100px; }
+.intro h1 { font-family:'Fredoka'; font-size:30px; margin:0 0 6px; }
+.intro p { margin:0 0 6px; opacity:.85; line-height:1.45; }
+.sec { padding:18px 20px 8px; }
+.sec h2 { font-family:'Fredoka'; font-size:24px; margin:10px 0 2px; color:#F6E22D; }
+.sec > p { margin:0 0 12px; opacity:.75; font-size:14px; }
+.grid { display:flex; flex-wrap:wrap; gap:26px; }
+.cell { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.cap { font-family:'Fredoka'; font-weight:500; font-size:15px; }
+
+/* phone */
+.phone { width:300px; height:640px; border-radius:40px; border:8px solid #0d0d0d; overflow:hidden; position:relative; background:var(--bg); color:var(--text); box-shadow:0 20px 40px rgba(0,0,0,.45); }
+.scr { position:absolute; inset:0; overflow:hidden; padding:0 14px 90px; }
+.sb { display:flex; justify-content:space-between; font-size:11px; font-weight:800; padding:9px 6px 4px; }
+.f { font-family:'Fredoka',sans-serif; }
+.h1 { font-family:'Fredoka'; font-weight:700; font-size:26px; line-height:1.08; margin:0; }
+.h2 { font-family:'Fredoka'; font-weight:600; font-size:18px; margin:16px 0 8px; display:flex; justify-content:space-between; align-items:baseline; }
+.h2 a { font-family:'Nunito'; font-size:12px; font-weight:800; color:var(--pink); text-decoration:none; }
+.sm { font-size:12px; font-weight:700; color:var(--muted); }
+.xs { font-size:10.5px; font-weight:800; color:var(--muted); }
+.row { display:flex; align-items:center; gap:10px; }
+.between { justify-content:space-between; }
+.col { display:flex; flex-direction:column; gap:10px; }
+.hero { margin:0 -14px; padding:0 14px 18px; background:var(--hero); border-bottom:3px solid var(--line); border-radius:0 0 28px 28px; }
+[data-theme="dark"] .hero { color:var(--text); }
+[data-theme="light"] .hero .sm { color:#5a4a1e; }
+
+.card { background:var(--surface); border:2.5px solid var(--line); border-radius:20px; padding:12px; box-shadow:4px 4px 0 var(--shadow); position:relative; }
+.card.flat { box-shadow:none; }
+.card.pink { background:var(--pink); color:var(--on-pink); }
+.card.pink .sm, .card.pink .xs { color:rgba(255,255,255,.85); }
+.card.yellow { background:var(--yellow); color:var(--on-color); }
+.card.teal { background:var(--teal); color:var(--on-color); }
+.card.lime { background:var(--lime); color:var(--on-color); }
+.card.lilac { background:var(--lilac); color:var(--on-color); }
+.card.yellow .sm, .card.teal .sm, .card.lime .sm, .card.lilac .sm { color:#3d3020; }
+[data-theme="dark"] .card:not(.pink):not(.yellow):not(.teal):not(.lime):not(.lilac) { box-shadow:4px 4px 0 #000, inset 0 1px 0 rgba(255,255,255,.06); }
+
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; font-family:'Fredoka'; font-weight:600; font-size:15px; padding:10px 16px; border-radius:14px; border:2.5px solid var(--line); background:var(--yellow); color:#1E1414; box-shadow:3px 3px 0 var(--shadow); cursor:pointer; user-select:none; transition:transform .09s cubic-bezier(.3,.7,.4,1.5), box-shadow .09s; }
+.btn:active, .btn.pressed { transform:translate(3px,3px); box-shadow:0 0 0 var(--shadow); }
+.btn.red { background:var(--red); color:#fff; }
+.btn.pink { background:var(--pink); color:#fff; }
+.btn.teal { background:var(--teal); }
+.btn.ghost { background:var(--surface); color:var(--text); }
+.btn.block { width:100%; }
+.btn { white-space:nowrap; }
+.btn.sm { font-size:13px; padding:6px 10px; border-radius:11px; }
+.btn svg { width:17px; height:17px; }
+.chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:99px; font-size:11px; font-weight:900; border:2px solid var(--line); background:var(--surface); color:var(--text); white-space:nowrap; }
+.chip.on { background:var(--text); color:var(--bg); }
+.chip.y { background:var(--yellow); color:#1E1414; } .chip.l { background:var(--lime); color:#1E1414; } .chip.t { background:var(--teal); color:#1E1414; } .chip.p { background:var(--pink); color:#fff; } .chip.r { background:var(--red); color:#fff; } .chip.d { background:#1E1414; color:#F6E22D; border-color:#1E1414; }
+.chip svg { width:12px; height:12px; }
+.chips { display:flex; gap:6px; overflow:hidden; }
+.input { display:flex; align-items:center; gap:8px; background:var(--surface); border:2.5px solid var(--line); border-radius:14px; padding:10px 12px; font-size:13px; font-weight:700; color:var(--muted); }
+.input svg { width:16px; height:16px; }
+.label { font-size:11px; font-weight:900; margin:10px 0 4px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.av { width:34px; height:34px; border-radius:50%; border:2.5px solid var(--line); display:inline-flex; align-items:center; justify-content:center; font-family:'Fredoka'; font-weight:600; font-size:13px; color:#1E1414; flex:none; position:relative; }
+.av.lg { width:84px; height:84px; font-size:30px; border-width:3px; }
+.av .dot { position:absolute; right:-2px; bottom:-2px; width:11px; height:11px; border-radius:50%; background:#3DBE5B; border:2px solid var(--surface); }
+.stack { display:flex; } .stack .av { width:26px; height:26px; font-size:10px; margin-left:-8px; border-width:2px; } .stack .av:first-child { margin-left:0; }
+.ico { width:36px; height:36px; border-radius:12px; border:2.5px solid var(--line); display:flex; align-items:center; justify-content:center; flex:none; color:#1E1414; }
+.ico svg { width:18px; height:18px; }
+.topbar { display:flex; align-items:center; gap:10px; margin:4px 0 12px; }
+.back { width:36px; height:36px; border-radius:50%; border:2.5px solid var(--line); background:var(--surface); display:flex; align-items:center; justify-content:center; box-shadow:2px 2px 0 var(--shadow); color:var(--text); }
+.back svg { width:18px; height:18px; }
+.badge { position:absolute; top:-6px; right:-8px; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:var(--red); color:#fff; font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; border:2px solid var(--tab); }
+.seg { display:flex; background:var(--sunken); border:2.5px solid var(--line); border-radius:16px; padding:3px; gap:3px; }
+.seg div { flex:1; text-align:center; font-family:'Fredoka'; font-weight:600; font-size:13px; padding:7px 0; border-radius:11px; color:var(--muted); }
+.seg div.on { background:var(--yellow); color:#1E1414; border:2px solid var(--line); }
+.tile { border:2.5px solid var(--line); border-radius:16px; box-shadow:3px 3px 0 var(--shadow); display:flex; flex-direction:column; justify-content:flex-end; padding:8px; font-family:'Fredoka'; font-weight:600; font-size:14px; color:#1E1414; position:relative; overflow:hidden; }
+.tile .xs { color:#3d3020; }
+.divider { height:0; border-top:2px dashed var(--line); opacity:.25; margin:10px 0; }
+.date { width:48px; flex:none; text-align:center; border:2.5px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface); color:var(--text); }
+.date b { display:block; background:var(--red); color:#fff; font-size:10px; padding:2px 0; font-weight:900; }
+.date span { display:block; font-family:'Fredoka'; font-weight:700; font-size:20px; padding:2px 0; }
+.bubble { max-width:78%; padding:9px 12px; border-radius:18px; border:2.5px solid var(--line); font-size:13px; font-weight:600; }
+.bubble.me { align-self:flex-end; background:var(--yellow); color:#1E1414; border-bottom-right-radius:6px; }
+.bubble.them { align-self:flex-start; background:var(--surface); border-bottom-left-radius:6px; }
+.code { display:flex; gap:7px; justify-content:center; }
+.code div { width:36px; height:46px; border:2.5px solid var(--line); border-radius:12px; background:var(--surface); font-family:'Fredoka'; font-weight:700; font-size:22px; display:flex; align-items:center; justify-content:center; }
+.code div.on { background:var(--yellow); color:#1E1414; box-shadow:3px 3px 0 var(--shadow); }
+.bar { flex:1; border:2px solid var(--line); border-radius:6px 6px 0 0; }
+.sheet-dim { position:absolute; inset:0; background:rgba(20,10,15,.55); }
+.sheet { position:absolute; left:0; right:0; bottom:0; background:var(--bg); border-top:3px solid var(--line); border-radius:28px 28px 0 0; padding:10px 14px 24px; }
+.grab { width:44px; height:5px; border-radius:3px; background:var(--muted); opacity:.5; margin:0 auto 10px; }
+.fab { position:absolute; right:16px; bottom:84px; width:54px; height:54px; border-radius:18px; background:var(--red); color:#fff; border:3px solid var(--line); box-shadow:4px 4px 0 var(--shadow); display:flex; align-items:center; justify-content:center; }
+.check { width:22px; height:22px; border-radius:7px; border:2.5px solid var(--line); background:var(--surface); display:flex; align-items:center; justify-content:center; flex:none; }
+.check.on { background:var(--lime); }
+.check svg { width:14px; height:14px; color:#1E1414; }
+.toggle { width:40px; height:24px; border-radius:12px; border:2.5px solid var(--line); background:var(--lime); position:relative; flex:none; }
+.toggle::after { content:''; position:absolute; right:2px; top:2px; width:15px; height:15px; border-radius:50%; background:#fff; border:2px solid var(--line); }
+
+/* tab bar */
+.tabbar { position:absolute; left:10px; right:10px; bottom:12px; height:62px; background:var(--tab); border:2.5px solid #000; border-radius:22px; display:flex; justify-content:space-around; align-items:center; z-index:5; }
+.tab { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:9.5px; font-weight:900; color:var(--tab-muted); position:relative; }
+.tab svg { width:20px; height:20px; }
+.tab.on { color:#1E1414; }
+.tab.on .tico { background:var(--tab-text); border:2px solid #000; border-radius:12px; padding:4px 10px; margin-top:-2px; animation:tabbump .5s cubic-bezier(.3,1.6,.5,1); }
+.tab.on span { color:var(--tab-text); }
+
+/* characters */
+.char { position:relative; flex:none; display:flex; align-items:center; justify-content:center; overflow:visible; }
+.char img { width:100%; height:100%; object-fit:contain; transform:scale(1.25); pointer-events:none; }
+.char.pawn img { transform:scale(2.7); }
+.char.bob img { animation:bob 3.2s ease-in-out infinite; }
+.char.wiggle img { animation:wiggle 2.4s ease-in-out infinite; }
+.char.pawn.bob img { animation:bobpawn 2.6s ease-in-out infinite; }
+
+/* motion */
+@keyframes bob { 0%,100% { transform:scale(1.25) translateY(0) rotate(-2deg); } 50% { transform:scale(1.25) translateY(-5px) rotate(2deg); } }
+@keyframes bobpawn { 0%,100% { transform:scale(2.7) translateY(0); } 50% { transform:scale(2.7) translateY(-3px) scaleY(1.03); } }
+@keyframes wiggle { 0%,80%,100% { transform:scale(1.25) rotate(0); } 85% { transform:scale(1.25) rotate(-8deg); } 90% { transform:scale(1.25) rotate(8deg); } 95% { transform:scale(1.25) rotate(-4deg); } }
+@keyframes pop { 0% { opacity:0; transform:translateY(18px) scale(.92); } 60% { opacity:1; transform:translateY(-3px) scale(1.02); } 100% { opacity:1; transform:none; } }
+@keyframes tabbump { 0% { transform:translateY(0) scale(.8); } 50% { transform:translateY(-6px) scale(1.1); } 100% { transform:none; } }
+@keyframes heart { 0% { transform:scale(1); } 30% { transform:scale(1.5) rotate(-10deg); } 60% { transform:scale(.9); } 100% { transform:scale(1); } }
+@keyframes confetti { 0% { transform:translate(0,0) rotate(0); opacity:1; } 100% { transform:translate(var(--x),var(--y)) rotate(var(--r)); opacity:0; } }
+@keyframes jump { 0%,100% { transform:translateY(0) scale(1,1); } 15% { transform:translateY(0) scale(1.1,.88); } 45% { transform:translateY(-34px) scale(.95,1.06); } 70% { transform:translateY(0) scale(1.08,.92); } 85% { transform:translateY(-6px); } }
+@keyframes coinup { 0% { transform:translateY(10px); opacity:0; } 100% { transform:none; opacity:1; } }
+@keyframes shimmer { 0% { background-position:-200px 0; } 100% { background-position:200px 0; } }
+@keyframes spinpawn { 0% { transform:scale(2.7) rotate(0); } 25% { transform:scale(2.7) rotate(-12deg) translateY(-4px); } 50% { transform:scale(2.7) rotate(0); } 75% { transform:scale(2.7) rotate(12deg) translateY(-4px); } 100% { transform:scale(2.7) rotate(0); } }
+.play .anim { animation:pop .55s cubic-bezier(.3,1.4,.5,1) both; animation-delay:calc(var(--i,0) * 70ms); }
+.jump img { animation:jump 1.4s cubic-bezier(.3,.7,.4,1) infinite; }
+.loadpawn img { animation:spinpawn 1.2s ease-in-out infinite; }
+.heart-pop { animation:heart .6s cubic-bezier(.3,1.6,.5,1); color:var(--red); }
+.skel { border-radius:12px; border:2px solid var(--line); background:linear-gradient(90deg,var(--sunken) 0, var(--surface2) 60px, var(--sunken) 120px) ; background-size:400px 100%; animation:shimmer 1.3s linear infinite; opacity:.8; }
+.confetti { position:absolute; left:50%; top:42%; width:10px; height:14px; border:2px solid #000; border-radius:3px; animation:confetti 1.6s cubic-bezier(.2,.7,.4,1) infinite; }
+
+/* motion panel */
+.demo { width:300px; background:#FFF8E7; color:#1E1414; border:3px solid #000; border-radius:22px; box-shadow:5px 5px 0 #000; padding:14px; }
+[data-theme="dark"] .demo { background:#261C2C; color:#FFF3D6; }
+.demo h3 { font-family:'Fredoka'; margin:0 0 4px; font-size:18px; }
+.demo p { margin:0 0 10px; font-size:13px; opacity:.8; line-height:1.4; }
+.stage { height:130px; border:2.5px dashed rgba(0,0,0,.25); border-radius:16px; display:flex; align-items:center; justify-content:center; gap:12px; position:relative; overflow:hidden; background:var(--bg); color:var(--text); }
+.legend { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 0; }
+.sw { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px; font-weight:800; }
+.sw i { width:46px; height:46px; border-radius:14px; border:2.5px solid #000; display:block; box-shadow:3px 3px 0 #000; }
+</style>
+</head>
+<body class="play">
+<div class="toolbar">
+  <span class="logo">mipo</span>
+  <button class="tbtn on" id="bLight" onclick="setTheme('light')">☀ Claro</button>
+  <button class="tbtn" id="bDark" onclick="setTheme('dark')">☾ Escuro</button>
+  <button class="tbtn" onclick="replay()">↻ Reproduzir entradas</button>
+  <span class="hint">Clique nos botões dentro das telas: eles "afundam" como adesivo.</span>
+</div>
+
+<div class="intro">
+  <h1>Festa Mipo · todas as telas</h1>
+  <p>Fonte Fredoka nos títulos e botões, Nunito no texto. Fundo creme nas telas densas e amarelo só no topo do Início e nas telas de entrada. No modo escuro, a base vira uma "noite de jogo" berinjela, e as cores da Mipo continuam vivas nos cartões.</p>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div id="root"></div>
+
+<script>
+const I = n => `<i data-lucide="${n}"></i>`;
+const C = (n, s = 64, cls = 'bob', st = '') => `<div class="char ${n >= 34 ? 'pawn' : ''} ${cls}" style="width:${s}px;height:${s}px;${st}"><img src="personagens/p${n}.png" alt=""></div>`;
+const AV = (t, c, dot = false, lg = false) => `<div class="av ${lg ? 'lg' : ''}" style="background:var(--${c})">${t}${dot ? '<i class="dot"></i>' : ''}</div>`;
+const SB = () => `<div class="sb"><span>9:41</span><span>▮▮▮ ◔</span></div>`;
+const TOP = (t, right = '') => `<div class="topbar"><div class="back">${I('arrow-left')}</div><div class="h1" style="font-size:22px;flex:1">${t}</div>${right}</div>`;
+const TABS = (on, admin = false) => {
+  const items = [['home', 'Início'], ...(admin ? [['shield', 'Painel']] : []), ['users', 'Social'], ['dice-5', 'Salas'], ['bell', 'Avisos'], ['user', 'Perfil']];
+  return `<div class="tabbar">${items.map(([ic, l]) => `<div class="tab ${l === on ? 'on' : ''}"><div class="tico">${I(ic)}</div><span>${l}</span>${l === 'Avisos' ? '<div class="badge">3</div>' : ''}${l === 'Social' ? '<div class="badge">5</div>' : ''}</div>`).join('')}</div>`;
+};
+const A = (i, html, st = '') => `<div class="anim" style="--i:${i};${st}">${html}</div>`;
+
+const S = {};
+
+S.login = `<div class="scr" style="background:var(--hero);padding-bottom:0">${SB()}
+  <div style="text-align:center;margin-top:18px">
+    <div class="f" style="font-size:64px;font-weight:700;color:var(--red);letter-spacing:-2px;line-height:.9;text-shadow:3px 3px 0 var(--line)">mipo</div>
+    <div class="sm" style="margin-top:6px">a sua mesa tá te esperando</div>
+  </div>
+  <div style="display:flex;justify-content:center;margin:10px 0 4px">${C(12, 150)}</div>
+  <div class="col">
+    ${A(0, `<div class="input">${I('mail')} seuemail@exemplo.com</div>`)}
+    ${A(1, `<div class="input">${I('lock')} Senha</div>`)}
+    ${A(2, `<div class="btn red block">Entrar</div>`)}
+    ${A(3, `<div class="row between" style="padding:0 4px"><span class="f" style="font-weight:600">Criar conta</span><span class="sm">Esqueci a senha</span></div>`)}
+  </div></div>`;
+
+S.codigo = `<div class="scr" style="background:var(--hero)">${SB()}
+  <div class="topbar"><div class="back">${I('arrow-left')}</div></div>
+  <div style="display:flex;justify-content:center">${C(41, 150)}</div>
+  <div class="h1" style="text-align:center;margin-top:6px">Confere seu e-mail!</div>
+  <p class="sm" style="text-align:center;margin:6px 10px 18px">Mandamos um código de 6 dígitos pra ana@exemplo.com</p>
+  <div class="code"><div>4</div><div>8</div><div>1</div><div class="on">|</div><div></div><div></div></div>
+  <div style="margin-top:22px" class="btn red block">Confirmar</div>
+  <p class="sm" style="text-align:center;margin-top:14px">Reenviar código em <b>0:42</b></p></div>`;
+
+S.inicio = `<div class="scr">
+  <div class="hero">${SB()}
+    <div class="row between" style="margin-top:6px">
+      <div class="f" style="font-size:30px;font-weight:700;color:var(--red);letter-spacing:-1px;text-shadow:2px 2px 0 var(--line)">mipo</div>
+      <span class="chip d" style="padding:3px 10px 3px 4px">${C(7, 22, '')}<span style="animation:coinup .6s both .4s">120</span></span>
+    </div>
+    <div class="h1" style="margin-top:8px">Bora jogar hoje, Ana?</div>
+  </div>
+  ${A(0, `<div class="card pink" style="margin-top:14px;padding-right:90px">
+      <span class="chip l">SEXTA · 19H30</span>
+      <div class="f" style="font-size:20px;font-weight:700;margin:6px 0 2px">Noite de Eurogames</div>
+      <div class="row" style="gap:6px"><div class="stack">${AV('JP', 'yellow')}${AV('LU', 'teal')}${AV('MA', 'lime')}</div><span class="sm">+9 vão</span></div>
+      <div class="btn" style="margin-top:10px">Vou nessa!</div>
+      ${C(23, 96, 'bob', 'position:absolute;right:-8px;bottom:-6px')}
+    </div>`)}
+  ${A(1, `<div class="h2">Salas livres agora <a>Ver salas</a></div>
+    <div class="chips"><span class="chip t">${I('users')} Mesa 2 · 2/4</span><span class="chip y">${I('users')} Mesa 5 · 1/6</span><span class="chip">Salinha · livre</span></div>`)}
+  ${A(2, `<div class="h2">Jogos em destaque <a>Ver todos</a></div>
+    <div class="row" style="gap:10px">
+      <div class="tile" style="width:84px;height:104px;background:var(--teal);transform:rotate(-2deg)">Azul<span class="xs">2–4 · 40min</span></div>
+      <div class="tile" style="width:84px;height:104px;background:var(--lime);transform:rotate(1.5deg)">Dixit<span class="xs">3–6 · 30min</span></div>
+      <div class="tile" style="width:84px;height:104px;background:var(--lilac);transform:rotate(-1deg)">Catan<span class="xs">3–4 · 90min</span></div>
+    </div>`)}
+  </div>${TABS('Início')}`;
+
+S.eventos = `<div class="scr">${SB()}${TOP('Eventos')}
+  <div class="chips" style="margin-bottom:12px"><span class="chip on">Esta semana</span><span class="chip">Torneios</span><span class="chip">Casual</span><span class="chip">Lançamentos</span></div>
+  <div class="col">
+  ${[['SEX', '24', 'Noite de Eurogames', 'Mesa grande · 19h30', '12 vão', 'pink'], ['SÁB', '25', 'Torneio de Azul', 'Inscrição: 30 moedas', '8/16', 'yellow'], ['DOM', '26', 'Quarta das Minas', 'Salão · 15h', '20 vão', 'teal'], ['QUA', '29', 'Conversa com o ilustrador', 'Palco · 16h30', 'Grátis', 'lime']].map((e, i) => A(i, `<div class="card row" style="gap:12px">
+      <div class="date"><b>${e[0]}</b><span>${e[1]}</span></div>
+      <div style="flex:1;min-width:0"><div class="f" style="font-weight:600;font-size:15px">${e[2]}</div><div class="sm">${e[3]}</div></div>
+      <span class="chip ${e[5][0]}">${e[4]}</span></div>`)).join('')}
+  </div></div>${TABS('Início')}`;
+
+S.eventoDetalhe = `<div class="scr" style="filter:saturate(.8)">${S.inicio.replace('<div class="scr">', '').replace(/<\/div>\s*<div class="tabbar">[\s\S]*$/, '')}</div>
+  <div class="sheet-dim"></div>
+  <div class="sheet anim" style="--i:0"><div class="grab"></div>
+    <div class="card pink" style="height:120px;display:flex;align-items:flex-end;justify-content:space-between;padding:12px">
+      <div><span class="chip l">SEXTA · 19H30</span><div class="f" style="font-size:22px;font-weight:700;margin-top:6px">Noite de Eurogames</div></div>
+      ${C(22, 90, 'bob', 'margin:-20px -6px -10px 0')}
+    </div>
+    <div class="col" style="margin-top:14px;gap:8px">
+      <div class="row"><div class="ico" style="background:var(--yellow)">${I('map-pin')}</div><div><div class="f" style="font-weight:600">Mesa grande</div><div class="sm">Mipo · Centro</div></div></div>
+      <div class="row"><div class="ico" style="background:var(--teal)">${I('users')}</div><div><div class="f" style="font-weight:600">12 confirmados</div><div class="sm">Faltam 4 vagas</div></div></div>
+      <div class="row"><div class="ico" style="background:var(--lime)">${I('coins')}</div><div><div class="f" style="font-weight:600">+20 moedas no check-in</div></div></div>
+    </div>
+    <div class="row" style="margin-top:16px;gap:10px"><div class="btn ghost" style="flex:1">${I('qr-code')} Check-in</div><div class="btn red" style="flex:1.3">Vou nessa!</div></div>
+  </div>`;
+
+S.checkin = `<div class="scr" style="background:var(--hero);display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:40px">
+  ${['#E0262B', '#E3156B', '#B9D531', '#7CC8B4', '#4A6FD8', '#FFFFFF', '#F59A23', '#E3156B'].map((c, i) => `<i class="confetti" style="background:${c};--x:${[-110, 100, -70, 120, -130, 60, 20, -30][i]}px;--y:${[-220, -200, 160, 120, 40, 200, -260, 240][i]}px;--r:${(i % 2 ? 1 : -1) * (200 + i * 40)}deg;animation-delay:${i * 90}ms"></i>`).join('')}
+  <div class="jump">${C(22, 170, '')}</div>
+  <div class="h1" style="text-align:center;font-size:30px;margin-top:4px">Check-in feito!</div>
+  <p class="sm" style="text-align:center;margin:6px 20px 0">Boa noite de Eurogames, Ana.</p>
+  <div class="card" style="margin-top:18px;display:flex;align-items:center;gap:8px;animation:pop .6s both .3s">${C(9, 40, 'wiggle')}<span class="f" style="font-size:24px;font-weight:700">+20 moedas</span></div>
+  <div class="btn red" style="margin-top:22px;width:80%">Bora!</div>
+  </div>`;
+
+S.salas = `<div class="scr">${SB()}
+  <div class="row between" style="margin:4px 0 10px"><div class="h1">Salas</div><div class="btn red sm">${I('plus')} Reservar</div></div>
+  <div class="input" style="margin-bottom:10px">${I('search')} Filtrar por jogo</div>
+  <div class="chips" style="margin-bottom:12px"><span class="chip on">Agora</span><span class="chip">Hoje à noite</span><span class="chip">Amanhã</span></div>
+  <div class="col">
+  ${A(0, `<div class="card"><div class="row between"><span class="chip t">MESA 2</span><span class="xs">20h — 22h</span></div>
+    <div class="f" style="font-size:18px;font-weight:600;margin:6px 0 4px">Catan</div>
+    <div class="row between"><div class="row" style="gap:6px"><div class="stack">${AV('JP', 'yellow')}${AV('RA', 'lilac')}</div><span class="sm">2 de 4 jogadores</span></div><div class="btn sm">Entrar</div></div></div>`)}
+  ${A(1, `<div class="card"><div class="row between"><span class="chip y">MESA 5</span><span class="xs">20h30 — 23h</span></div>
+    <div class="f" style="font-size:18px;font-weight:600;margin:6px 0 4px">Terraforming Mars</div>
+    <div class="row between"><div class="row" style="gap:6px"><div class="stack">${AV('LU', 'teal')}</div><span class="sm">1 de 5 jogadores</span></div><div class="btn sm">Entrar</div></div></div>`)}
+  ${A(2, `<div class="card" style="opacity:.75"><div class="row between"><span class="chip r">LOTADA</span><span class="xs">19h — 21h</span></div>
+    <div class="f" style="font-size:18px;font-weight:600;margin:6px 0 4px">Dixit</div>
+    <div class="row between"><div class="row" style="gap:6px"><div class="stack">${AV('MA', 'lime')}${AV('PE', 'yellow')}${AV('CA', 'pink')}${AV('BI', 'teal')}</div><span class="sm">6 de 6</span></div><div class="btn ghost sm">Avisar vaga</div></div></div>`)}
+  </div></div>${TABS('Salas')}`;
+
+S.reservar = `<div class="scr">${SB()}${TOP('Reservar mesa')}
+  <div class="label">Jogo</div>
+  <div class="input" style="color:var(--text)"><div class="tile" style="width:30px;height:30px;padding:0;background:var(--teal);box-shadow:none;border-radius:8px"></div> Azul <span style="margin-left:auto">${I('chevron-down')}</span></div>
+  <div class="label">Dia</div>
+  <div class="chips"><span class="chip">Hoje</span><span class="chip y">Sex 24</span><span class="chip">Sáb 25</span><span class="chip">Dom 26</span></div>
+  <div class="label">Horário</div>
+  <div class="chips" style="flex-wrap:wrap"><span class="chip">18h</span><span class="chip">19h</span><span class="chip y">20h</span><span class="chip" style="opacity:.4;text-decoration:line-through">21h</span><span class="chip">22h</span></div>
+  <div class="label">Jogadores</div>
+  <div class="row"><div class="back">${I('minus')}</div><div class="f" style="font-size:28px;font-weight:700;width:40px;text-align:center">4</div><div class="back">${I('plus')}</div><span class="sm">até 4 neste jogo</span></div>
+  <div class="label">Mesa</div>
+  <div class="seg"><div class="on">Salão</div><div>Salinha</div></div>
+  <div class="card yellow" style="margin-top:16px;display:flex;align-items:center;gap:8px;padding:8px 12px">${C(37, 40, '')}<span class="sm">Reserva passa pela aprovação da equipe.</span></div>
+  <div class="btn red block" style="position:absolute;left:14px;right:14px;bottom:20px;width:auto">Pedir reserva</div></div>`;
+
+S.jogos = `<div class="scr">${SB()}${TOP('Jogos')}
+  <div class="input" style="margin-bottom:10px">${I('search')} Buscar no acervo (214 jogos)</div>
+  <div class="chips" style="margin-bottom:12px"><span class="chip on">Todos</span><span class="chip">Festa</span><span class="chip">Estratégia</span><span class="chip">Cooperativo</span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+  ${[['Azul', '2–4 · 40min', 'teal', -1.5], ['Dixit', '3–6 · 30min', 'lime', 1], ['Catan', '3–4 · 90min', 'lilac', 1.5], ['Código Secreto', '4–8 · 15min', 'yellow', -1], ['Pandemic', '2–4 · 45min', 'orange', -1], ['Wingspan', '1–5 · 60min', 'pink', 1]].map((g, i) => A(i, `<div class="tile" style="height:120px;background:var(--${g[2]});transform:rotate(${g[3]}deg);${g[2] === 'pink' ? 'color:#fff' : ''}">${g[0]}<span class="xs" style="${g[2] === 'pink' ? 'color:#ffe' : ''}">${g[1]}</span></div>`)).join('')}
+  </div></div>${TABS('Início')}`;
+
+S.jogoDetalhe = `<div class="scr" style="padding-top:0">
+  <div class="hero" style="background:var(--teal);height:200px;position:relative;padding-top:4px">${SB()}
+    <div class="back" style="position:absolute;top:34px;left:14px">${I('arrow-left')}</div>
+    <div class="tile" style="position:absolute;left:50%;top:44px;transform:translateX(-50%) rotate(-3deg);width:110px;height:140px;background:#F6E22D;font-size:22px;box-shadow:5px 5px 0 var(--shadow)">Azul</div>
+  </div>
+  <div class="h1" style="margin-top:14px">Azul</div>
+  <div class="sm">Abstrato · Plan B Games</div>
+  <div class="row" style="gap:8px;margin-top:10px">
+    <div class="card flat" style="flex:1;text-align:center;padding:8px"><div class="f" style="font-weight:700;font-size:17px">2–4</div><div class="xs">jogadores</div></div>
+    <div class="card flat" style="flex:1;text-align:center;padding:8px"><div class="f" style="font-weight:700;font-size:17px">40min</div><div class="xs">partida</div></div>
+    <div class="card flat" style="flex:1;text-align:center;padding:8px"><div class="f" style="font-weight:700;font-size:17px">8+</div><div class="xs">idade</div></div>
+  </div>
+  <div class="h2">Sobre o jogo</div>
+  <p class="sm" style="margin:0;line-height:1.45">Monte o mosaico mais bonito do palácio escolhendo azulejos sem deixar sobrar nada para o chão.</p>
+  <div class="h2">Como jogar</div>
+  <div class="card lilac" style="height:86px;display:flex;align-items:center;justify-content:center"><div class="ico" style="width:48px;height:48px;border-radius:50%;background:var(--yellow)">${I('play')}</div></div>
+  <div class="btn red block" style="position:absolute;left:14px;right:14px;bottom:20px;width:auto">Reservar mesa com Azul</div></div>`;
+
+S.feed = `<div class="scr">${SB()}
+  <div class="row between" style="margin:4px 0 10px"><div class="h1">Social</div><div class="back">${I('search')}</div></div>
+  <div class="seg" style="margin-bottom:12px"><div class="on">Feed</div><div>Amigos</div><div>Conversas</div></div>
+  <div class="card" style="display:flex;gap:8px;align-items:center;padding:8px 10px;margin-bottom:12px">${AV('AN', 'yellow')}<span class="sm" style="flex:1">Conta como foi a jogatina...</span><div class="ico" style="background:var(--pink);color:#fff;width:32px;height:32px">${I('image')}</div></div>
+  ${A(0, `<div class="card" style="margin-bottom:12px">
+    <div class="row">${AV('JP', 'teal')}<div style="flex:1"><div class="f" style="font-weight:600">João Pedro</div><div class="xs">há 12 min · Mesa 2</div></div>${I('more-horizontal')}</div>
+    <p style="font-size:13px;font-weight:600;margin:8px 0">Primeira vitória no Catan!! Obrigado mesa 2 pela paciência 😅</p>
+    <div style="height:110px;border:2.5px solid var(--line);border-radius:14px;background:var(--lilac);display:flex;align-items:center;justify-content:center">${C(30, 90)}</div>
+    <div class="row" style="margin-top:8px;gap:16px"><span class="row sm heart-pop" style="gap:4px;color:var(--red)">${I('heart')} 24</span><span class="row sm" style="gap:4px">${I('message-circle')} 6</span></div></div>`)}
+  ${A(1, `<div class="card"><div class="row">${AV('LU', 'lime')}<div style="flex:1"><div class="f" style="font-weight:600">Luana</div><div class="xs">há 1h</div></div></div><p style="font-size:13px;font-weight:600;margin:8px 0 0">Alguém pra um Dixit sábado à tarde?</p></div>`)}
+  </div>${TABS('Social')}`;
+
+S.amigos = `<div class="scr">${SB()}
+  <div class="row between" style="margin:4px 0 10px"><div class="h1">Social</div><div class="back">${I('user-plus')}</div></div>
+  <div class="seg" style="margin-bottom:12px"><div>Feed</div><div class="on">Amigos</div><div>Conversas</div></div>
+  ${A(0, `<div class="card yellow" style="padding-right:80px;margin-bottom:14px"><div class="f" style="font-weight:700;font-size:16px">2 pedidos de amizade</div><div class="sm">Rafa e Bia querem jogar com você</div><div class="btn pink sm" style="margin-top:8px">Ver pedidos</div>${C(16, 84, 'bob', 'position:absolute;right:-4px;bottom:-4px')}</div>`)}
+  <div class="input" style="margin-bottom:10px">${I('search')} Buscar amigos</div>
+  <div class="col" style="gap:8px">
+  ${[['JP', 'João Pedro', 'Na Mesa 2 · Catan', 'teal', 1], ['LU', 'Luana', 'Online', 'lime', 1], ['MA', 'Marcos', 'Visto há 2h', 'yellow', 0], ['CA', 'Carol', 'Visto ontem', 'pink', 0]].map((f, i) => A(i + 1, `<div class="row" style="padding:4px 2px">${AV(f[0], f[3], f[4])}<div style="flex:1"><div class="f" style="font-weight:600">${f[1]}</div><div class="xs">${f[2]}</div></div><div class="back" style="width:32px;height:32px">${I('message-circle')}</div></div>`)).join('')}
+  </div></div>${TABS('Social')}`;
+
+S.conversas = `<div class="scr">${SB()}
+  <div class="row between" style="margin:4px 0 10px"><div class="h1">Social</div><div class="back">${I('square-pen')}</div></div>
+  <div class="seg" style="margin-bottom:12px"><div>Feed</div><div>Amigos</div><div class="on">Conversas</div></div>
+  <div class="col" style="gap:4px">
+  ${[['JP', 'João Pedro', 'bora revanche sexta?', '21:04', 2, 'teal'], ['EU', 'Galera do Euro', 'Luana: eu levo o Brass', '20:51', 3, 'yellow'], ['LU', 'Luana', 'kkkkk verdade', '19:30', 0, 'lime'], ['QM', 'Quarta das Minas', 'Bia: foto da mesa!', 'ontem', 0, 'pink'], ['MA', 'Marcos', 'valeu!', 'seg', 0, 'lilac']].map((c, i) => A(i, `<div class="row" style="padding:8px 2px;border-bottom:2px dashed rgba(127,100,90,.25)">${AV(c[0], c[5])}<div style="flex:1;min-width:0"><div class="row between"><span class="f" style="font-weight:600">${c[1]}</span><span class="xs">${c[3]}</span></div><div class="row between"><span class="sm" style="${c[4] ? 'color:var(--text)' : ''}">${c[2]}</span>${c[4] ? `<span class="chip r" style="padding:1px 7px">${c[4]}</span>` : ''}</div></div></div>`)).join('')}
+  </div></div>${TABS('Social')}`;
+
+S.chat = `<div class="scr" style="display:flex;flex-direction:column;padding-bottom:0">${SB()}
+  <div class="topbar" style="margin-bottom:6px"><div class="back">${I('arrow-left')}</div>${AV('JP', 'teal', true)}<div style="flex:1"><div class="f" style="font-weight:600">João Pedro</div><div class="xs">na Mesa 2</div></div>${I('more-vertical')}</div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px;padding:6px 0;background-image:radial-gradient(rgba(127,100,90,.18) 1.2px, transparent 1.4px);background-size:16px 16px;margin:0 -14px;padding:10px 14px">
+    <div class="xs" style="align-self:center" ><span class="chip">Hoje</span></div>
+    <div class="bubble them">Ganhou de mim no Catan de novo 😤</div>
+    <div class="bubble me">foi sorte nos dados juro</div>
+    <div class="bubble them">bora revanche sexta? Noite de Euro</div>
+    <div class="bubble me anim" style="--i:1">bora!! já confirmei 🎲</div>
+    <div class="row" style="gap:4px;align-self:flex-start;margin-top:4px">${C(44, 34, 'bob')}<span class="xs">João está digitando...</span></div>
+  </div>
+  <div class="row" style="padding:10px 0 18px;gap:8px"><div class="back">${I('plus')}</div><div class="input" style="flex:1;padding:8px 12px">Mensagem</div><div class="ico" style="background:var(--yellow);border-radius:50%">${I('send')}</div></div></div>`;
+
+S.grupo = `<div class="scr">${SB()}${TOP('Novo grupo')}
+  <div class="row" style="gap:12px"><div class="av lg" style="background:var(--yellow);width:64px;height:64px">${I('camera')}</div><div class="input" style="flex:1;color:var(--text)">Galera do Euro</div></div>
+  <div class="label">Participantes (3)</div>
+  <div class="chips" style="flex-wrap:wrap"><span class="chip t">João ✕</span><span class="chip l">Luana ✕</span><span class="chip y">Marcos ✕</span></div>
+  <div class="input" style="margin:12px 0 8px">${I('search')} Buscar amigos</div>
+  <div class="col" style="gap:6px">
+  ${[['JP', 'João Pedro', 'teal', 1], ['LU', 'Luana', 'lime', 1], ['MA', 'Marcos', 'yellow', 1], ['CA', 'Carol', 'pink', 0], ['RA', 'Rafa', 'lilac', 0]].map(f => `<div class="row" style="padding:4px 2px">${AV(f[0], f[2])}<div class="f" style="flex:1;font-weight:600">${f[1]}</div><div class="check ${f[3] ? 'on' : ''}">${f[3] ? I('check') : ''}</div></div>`).join('')}
+  </div><div class="btn red block" style="position:absolute;left:14px;right:14px;bottom:20px;width:auto">Criar grupo</div></div>`;
+
+S.avisos = `<div class="scr">${SB()}
+  <div class="row between" style="margin:4px 0 6px"><div class="h1">Avisos</div>${C(2, 64, 'wiggle')}</div>
+  <div class="label" style="margin-top:0">Hoje</div>
+  <div class="col">
+  ${A(0, `<div class="card"><div class="row">${AV('RA', 'lilac')}<div style="flex:1"><div class="f" style="font-weight:600">Rafa quer ser seu amigo</div><div class="xs">há 5 min</div></div></div><div class="row" style="margin-top:8px;gap:8px"><div class="btn sm" style="flex:1">Aceitar</div><div class="btn ghost sm" style="flex:1">Recusar</div></div></div>`)}
+  ${A(1, `<div class="card row"><div class="ico" style="background:var(--lime)">${I('check')}</div><div style="flex:1"><div class="f" style="font-weight:600">Reserva aprovada!</div><div class="xs">Mesa 5 · Sex 20h · Azul</div></div></div>`)}
+  ${A(2, `<div class="card row"><div class="ico" style="background:var(--yellow)">${I('trophy')}</div><div style="flex:1"><div class="f" style="font-weight:600">Conquista: Rei do Catan</div><div class="xs">+50 moedas</div></div></div>`)}
+  </div>
+  <div class="label">Esta semana</div>
+  ${A(3, `<div class="card row" style="opacity:.8"><div class="ico" style="background:var(--pink);color:#fff">${I('calendar')}</div><div style="flex:1"><div class="f" style="font-weight:600">Torneio de Azul abriu inscrições</div><div class="xs">seg</div></div></div>`)}
+  </div>${TABS('Avisos')}`;
+
+S.avisosVazio = `<div class="scr" style="display:flex;flex-direction:column">${SB()}
+  <div class="h1" style="margin:4px 0">Avisos</div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:40px">
+    ${C(5, 150)}
+    <div class="f" style="font-size:22px;font-weight:700;margin-top:6px">Tudo em dia por aqui</div>
+    <p class="sm" style="margin:6px 20px 16px">Quando alguém te chamar pra jogar, aparece aqui.</p>
+    <div class="btn">Ver eventos</div>
+  </div></div>${TABS('Avisos')}`;
+
+S.perfil = `<div class="scr">
+  <div class="hero" style="background:var(--pink);color:#fff;text-align:center;padding-bottom:16px">${SB()}
+    <div class="row between"><span></span><div class="back" style="width:32px;height:32px">${I('settings')}</div></div>
+    ${AV('AN', 'yellow', false, true)}
+    <div class="h1" style="margin-top:8px">Ana Souza</div>
+    <div class="row" style="justify-content:center;gap:6px;margin-top:6px"><span class="chip y">Nível 7</span><span class="chip d" style="padding:2px 9px 2px 3px">${C(6, 20, '')}120</span></div>
+  </div>
+  <div class="row" style="gap:8px;margin-top:14px">
+    ${[['48', 'partidas'], ['12', 'eventos'], ['31', 'amigos']].map((s, i) => A(i, `<div class="card flat" style="text-align:center;padding:8px"><div class="f" style="font-weight:700;font-size:20px">${s[0]}</div><div class="xs">${s[1]}</div></div>`, 'flex:1')).join('')}
+  </div>
+  <div class="h2">Conquistas <a>Ver todas</a></div>
+  <div class="row" style="gap:10px">
+    ${[[28, 'yellow', 'Rei do Catan'], [25, 'lilac', 'Alquimista'], [24, 'teal', 'Sortudo']].map((c, i) => A(i + 3, `<div class="card ${c[1]}" style="width:84px;padding:6px;text-align:center">${C(c[0], 60, i === 0 ? 'wiggle' : '', 'margin:0 auto')}<div class="xs" style="color:#1E1414">${c[2]}</div></div>`)).join('')}
+  </div>
+  <div class="h2">Últimas partidas</div>
+  <div class="card row" style="padding:8px 10px"><div class="tile" style="width:34px;height:34px;padding:0;background:var(--lilac);box-shadow:none;border-radius:9px"></div><div style="flex:1"><div class="f" style="font-weight:600">Catan</div><div class="xs">Venceu · ontem</div></div><span class="chip l">+15</span></div>
+  </div>${TABS('Perfil')}`;
+
+S.jogador = `<div class="scr">
+  <div class="hero" style="background:var(--teal);text-align:center;padding-bottom:16px">${SB()}
+    <div class="row between"><div class="back" style="width:32px;height:32px">${I('arrow-left')}</div><div class="back" style="width:32px;height:32px">${I('more-horizontal')}</div></div>
+    ${AV('JP', 'yellow', true, true)}
+    <div class="h1" style="margin-top:8px;color:#1E1414">João Pedro</div>
+    <div class="sm" style="color:#1E1414">Jogando Catan na Mesa 2</div>
+    <div class="row" style="justify-content:center;gap:8px;margin-top:10px"><div class="btn red sm">${I('user-plus')} Adicionar</div><div class="btn ghost sm">${I('message-circle')} Mensagem</div></div>
+  </div>
+  <div class="h2">Em comum</div>
+  <div class="card yellow row" style="padding-right:70px">${C(21, 70, 'bob', 'position:absolute;right:-2px;bottom:-4px')}<div><div class="f" style="font-weight:700">8 partidas juntos</div><div class="sm">5 amigos em comum · Catan, Azul</div></div></div>
+  <div class="h2">Conquistas</div>
+  <div class="row" style="gap:10px">${[[31, 'yellow'], [13, 'lime'], [10, 'lilac']].map(c => `<div class="card ${c[1]}" style="width:84px;padding:6px">${C(c[0], 60, '', 'margin:0 auto')}</div>`).join('')}</div>
+  </div>${TABS('Social')}`;
+
+S.carregando = `<div class="scr" style="display:flex;flex-direction:column">${SB()}
+  <div class="h1" style="margin:4px 0 12px">Salas</div>
+  <div class="row" style="justify-content:center;gap:10px;margin:20px 0 6px">${C(36, 70, 'loadpawn')}</div>
+  <div class="f" style="text-align:center;font-weight:600">Embaralhando as cartas...</div>
+  <div class="col" style="margin-top:20px"><div class="skel" style="height:90px"></div><div class="skel" style="height:90px"></div><div class="skel" style="height:90px"></div></div>
+  </div>${TABS('Salas')}`;
+
+S.erro = `<div class="scr" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:60px">
+  ${C(46, 150)}
+  <div class="h1" style="margin-top:4px">Ops, caiu uma peça!</div>
+  <p class="sm" style="margin:6px 24px 18px">Não conseguimos falar com a Mipo agora. Confere sua internet e tenta de novo.</p>
+  <div class="btn red">${I('rotate-ccw')} Tentar de novo</div></div>`;
+
+/* admin */
+const ADM = (t, sub, body, extra = '') => `<div class="scr">${SB()}${TOP(t, extra)}${sub ? `<p class="sm" style="margin:-6px 0 12px">${sub}</p>` : ''}${body}</div>`;
+
+S.painel = `<div class="scr">${SB()}
+  <div class="card yellow row" style="margin:6px 0 14px;padding-right:80px">${C(26, 80, 'bob', 'position:absolute;right:-2px;bottom:-6px')}<div><div class="h1" style="font-size:22px">Painel da Mipo</div><div class="sm">3 coisas esperando você</div></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+  ${[['check-square', 'Aprovações', 'pink', 3], ['calendar', 'Eventos', 'teal', 1], ['users', 'Usuários', 'lilac', 0], ['wallet', 'Financeiro', 'lime', 0], ['dice-5', 'Jogos', 'yellow', 0], ['gift', 'Recompensas', 'orange', 0], ['trophy', 'Conquistas', 'yellow', 0], ['flag', 'Denúncias', 'red', 2], ['megaphone', 'Notificar', 'teal', 0]].map((t, i) => A(i, `<div class="card" style="padding:10px;display:flex;flex-direction:column;gap:6px"><div class="ico" style="background:var(--${t[2]});${['pink', 'red'].includes(t[2]) ? 'color:#fff' : ''}">${I(t[0])}</div><span class="f" style="font-weight:600;font-size:14px">${t[1]}</span>${t[3] ? `<span class="chip r" style="position:absolute;top:8px;right:8px;padding:1px 7px">${t[3]}</span>` : ''}</div>`)).join('')}
+  </div></div>${TABS('Painel', true)}`;
+
+S.usuarios = ADM('Usuários', '1.284 jogadores', `
+  <div class="input" style="margin-bottom:10px">${I('search')} Buscar por nome ou e-mail</div>
+  <div class="chips" style="margin-bottom:10px"><span class="chip on">Todos</span><span class="chip">Admins</span><span class="chip">Banidos</span></div>
+  <div class="col" style="gap:8px">
+  ${[['AN', 'Ana Souza', 'ana@exemplo.com', '120', 'yellow'], ['JP', 'João Pedro', 'jp@exemplo.com', '340', 'teal'], ['LU', 'Luana', 'lu@exemplo.com', '85', 'lime'], ['MA', 'Marcos', 'marcos@exemplo.com', '12', 'lilac']].map(u => `<div class="card row" style="padding:8px 10px">${AV(u[0], u[4])}<div style="flex:1;min-width:0"><div class="f" style="font-weight:600">${u[1]}</div><div class="xs">${u[2]}</div></div><span class="chip y">${u[3]}</span>${I('more-vertical')}</div>`).join('')}
+  </div>`);
+
+S.financeiro = ADM('Financeiro', 'Outubro', `
+  <div class="card lime" style="padding-right:80px">${C(8, 74, 'wiggle', 'position:absolute;right:0;top:4px')}<div class="sm">Saldo do mês</div><div class="h1" style="font-size:30px">R$ 8.420</div><span class="chip" style="background:#fff;color:#1E1414">${I('trending-up')} 12% vs set</span></div>
+  <div class="card" style="margin-top:12px;padding:10px"><div class="xs">Entradas por semana</div><div class="row" style="align-items:flex-end;height:80px;gap:8px;margin-top:8px">${[45, 70, 55, 90].map((h, i) => `<div class="bar" style="height:${h}%;background:var(--${['teal', 'yellow', 'pink', 'lime'][i]})"></div>`).join('')}</div></div>
+  <div class="h2">Movimentações</div>
+  ${[['Mesa 5 · reserva', '+ R$ 40', 'lime'], ['Torneio de Azul', '+ R$ 480', 'lime'], ['Compra de jogos', '− R$ 610', 'red']].map(m => `<div class="row between" style="padding:6px 2px;border-bottom:2px dashed rgba(127,100,90,.25)"><span class="f" style="font-weight:500">${m[0]}</span><span class="f" style="font-weight:700;color:${m[2] === 'red' ? 'var(--red)' : 'inherit'}">${m[1]}</span></div>`).join('')}`);
+
+S.admJogos = ADM('Acervo', '214 jogos', `
+  <div class="input" style="margin-bottom:10px">${I('search')} Buscar jogo</div>
+  <div class="col" style="gap:8px">
+  ${[['Azul', '2–4 · 40min', 'teal'], ['Catan', '3–4 · 90min', 'lilac'], ['Dixit', '3–6 · 30min', 'lime'], ['Pandemic', '2–4 · 45min', 'orange'], ['Wingspan', '1–5 · 60min', 'pink']].map(g => `<div class="card row" style="padding:8px 10px"><div class="tile" style="width:40px;height:48px;padding:0;background:var(--${g[2]});box-shadow:none;border-radius:9px"></div><div style="flex:1"><div class="f" style="font-weight:600">${g[0]}</div><div class="xs">${g[1]}</div></div><div class="back" style="width:30px;height:30px">${I('pencil')}</div></div>`).join('')}
+  </div>`) + `<div class="fab">${I('plus')}</div>`;
+
+S.recompensas = ADM('Recompensas', 'O que os jogadores trocam com moedas', `
+  <div class="col">
+  ${[['Café grátis', '80', 'yellow', 10], ['1h de mesa', '200', 'teal', 6], ['Camiseta Mipo', '900', 'pink', 7]].map((r, i) => A(i, `<div class="card ${r[2]} row" style="padding-right:70px">${C(r[3], 64, i === 0 ? 'bob' : '', 'position:absolute;right:2px;bottom:0')}<div><div class="f" style="font-weight:700;font-size:16px">${r[0]}</div><span class="chip d" style="margin-top:4px">${r[1]} moedas</span></div></div>`)).join('')}
+  </div>`) + `<div class="fab">${I('plus')}</div>`;
+
+S.conquistas = ADM('Nova conquista', '', `
+  <div class="card yellow" style="display:flex;flex-direction:column;align-items:center;padding:10px">${C(29, 100, 'wiggle')}<div class="f" style="font-weight:700;font-size:18px">Rei do Catan</div><span class="chip p">LENDÁRIA</span></div>
+  <div class="label">Nome</div><div class="input" style="color:var(--text)">Rei do Catan</div>
+  <div class="label">Raridade</div>
+  <div class="chips"><span class="chip">Comum</span><span class="chip t">Rara</span><span class="chip l">Épica</span><span class="chip p">Lendária</span></div>
+  <div class="label">Desbloqueia quando</div>
+  <div class="input" style="color:var(--text)">Vencer 10 partidas de <b>Catan</b></div>
+  <div class="label">Personagem</div>
+  <div class="row" style="gap:6px">${[28, 25, 24, 13].map((n, i) => `<div class="card flat" style="padding:2px;${i === 0 ? 'background:var(--yellow)' : ''}">${C(n, 40, '')}</div>`).join('')}</div>`);
+
+S.aprovacoes = ADM('Aprovações', '3 reservas esperando', `
+  <div class="seg" style="margin-bottom:12px"><div class="on">Reservas (3)</div><div>Eventos (1)</div></div>
+  <div class="col">
+  ${[['AN', 'Ana Souza', 'Azul · Mesa 5', 'Sex 24 · 20h · 4 pessoas', 'yellow'], ['MA', 'Marcos', 'Brass · Salinha', 'Sáb 25 · 14h · 3 pessoas', 'lilac']].map((r, i) => A(i, `<div class="card"><div class="row">${AV(r[0], r[4])}<div style="flex:1"><div class="f" style="font-weight:600">${r[1]}</div><div class="xs">${r[3]}</div></div></div><div class="f" style="font-weight:600;font-size:16px;margin:8px 0">${r[2]}</div><div class="row" style="gap:8px"><div class="btn sm" style="flex:1;background:var(--lime)">${I('check')} Aprovar</div><div class="btn ghost sm" style="flex:1">${I('x')} Recusar</div></div></div>`)).join('')}
+  </div>`);
+
+S.admEventos = ADM('Eventos', '', `
+  <div class="chips" style="margin-bottom:12px"><span class="chip on">Pendentes (1)</span><span class="chip">Aprovados</span><span class="chip">Recusados</span></div>
+  <div class="col">
+  ${A(0, `<div class="card"><span class="chip y">PEDIDO DE JOGADOR</span><div class="f" style="font-weight:600;font-size:16px;margin:6px 0 2px">Campeonato de Código Secreto</div><div class="xs">por Luana · Dom 2/11 · 15h · Salão</div><div class="row" style="gap:8px;margin-top:8px"><div class="btn sm" style="flex:1;background:var(--lime)">Aprovar</div><div class="btn ghost sm" style="flex:1">Recusar</div></div></div>`)}
+  ${A(1, `<div class="card row"><div class="date"><b>SEX</b><span>24</span></div><div style="flex:1"><div class="f" style="font-weight:600">Noite de Eurogames</div><div class="xs">12 confirmados</div></div><span class="chip l">Aprovado</span></div>`)}
+  ${A(2, `<div class="card row"><div class="date"><b>SÁB</b><span>25</span></div><div style="flex:1"><div class="f" style="font-weight:600">Torneio de Azul</div><div class="xs">8/16 inscritos</div></div><span class="chip l">Aprovado</span></div>`)}
+  </div>`) + `<div class="fab">${I('plus')}</div>`;
+
+S.criarEvento = ADM('Novo evento', '', `
+  <div style="height:120px;border:2.5px dashed var(--line);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:var(--surface2)">${I('image-plus')}<span class="sm">Adicionar banner</span></div>
+  <div class="label">Nome</div><div class="input" style="color:var(--text)">Noite de Eurogames</div>
+  <div class="row" style="gap:8px"><div style="flex:1"><div class="label">Dia</div><div class="input">${I('calendar')} 24/10</div></div><div style="flex:1"><div class="label">Hora</div><div class="input">${I('clock')} 19:30</div></div></div>
+  <div class="label">Local</div><div class="seg"><div class="on">Salão</div><div>Salinha</div><div>Palco</div></div>
+  <div class="label">Vagas</div><div class="input">16</div>`) + `<div class="btn red block" style="position:absolute;left:14px;right:14px;bottom:20px;width:auto">Publicar evento</div>`;
+
+S.notificar = ADM('Enviar aviso', '', `
+  <div class="label">Para quem</div>
+  <div class="chips"><span class="chip on">Todos</span><span class="chip">Confirmados no evento</span><span class="chip">Admins</span></div>
+  <div class="label">Título</div><div class="input" style="color:var(--text)">Mesa liberada hoje!</div>
+  <div class="label">Mensagem</div><div class="input" style="height:70px;align-items:flex-start;color:var(--text)">Sobrou mesa no salão a partir das 19h. Chega mais!</div>
+  <div class="label">Prévia</div>
+  <div class="card row" style="padding:8px 10px;border-radius:16px">${C(3, 40, '')}<div style="flex:1"><div class="row between"><span class="f" style="font-weight:600">Mesa liberada hoje!</span><span class="xs">agora</span></div><div class="xs">Sobrou mesa no salão a partir das 19h...</div></div></div>`) + `<div class="btn red block" style="position:absolute;left:14px;right:14px;bottom:20px;width:auto">${I('send')} Enviar para 1.284</div>`;
+
+S.denuncias = ADM('Denúncias', '2 posts para revisar', `
+  <div class="col">
+  ${A(0, `<div class="card"><div class="row between"><span class="chip r">${I('flag')} 3 denúncias</span><span class="xs">há 2h</span></div><div class="row" style="margin-top:8px">${AV('XX', 'lilac')}<div><div class="f" style="font-weight:600">usuario123</div><div class="xs">Motivo: spam</div></div></div><p style="font-size:13px;font-weight:600;margin:8px 0;padding:8px;border-radius:12px;background:var(--sunken)">"Compre seguidores baratos no link..."</p><div class="row" style="gap:8px"><div class="btn red sm" style="flex:1">Remover post</div><div class="btn ghost sm" style="flex:1">Manter</div></div></div>`)}
+  ${A(1, `<div class="card row" style="padding-right:60px">${C(35, 50, '', 'position:absolute;right:4px;bottom:4px')}<div><div class="f" style="font-weight:600">Fila quase zerada</div><div class="xs">Mais 1 depois deste</div></div></div>`)}
+  </div>`);
+
+const SECTIONS = [
+  ['Entrada', 'Login, cadastro e código de verificação ficam em fundo amarelo, para a primeira impressão já ser a Mipo.', [['login', 'Login'], ['codigo', 'Código do e-mail']]],
+  ['Início e eventos', 'O amarelo fica só no topo do Início. Eventos usam o dado; o check-in tem festa com confete.', [['inicio', 'Início'], ['eventos', 'Eventos'], ['eventoDetalhe', 'Detalhe do evento (folha)'], ['checkin', 'Check-in feito']]],
+  ['Salas e jogos', 'Cartões de sala com estado claro (vagas, lotada). Capas dos jogos levemente tortas, como cartas na mesa.', [['salas', 'Salas'], ['reservar', 'Reservar mesa'], ['jogos', 'Jogos'], ['jogoDetalhe', 'Detalhe do jogo']]],
+  ['Social', 'Quebra-cabeças para amizade, celular para avisos. Chat com fundo pontilhado e balões de adesivo.', [['feed', 'Feed'], ['amigos', 'Amigos'], ['conversas', 'Conversas'], ['chat', 'Conversa'], ['grupo', 'Novo grupo']]],
+  ['Avisos e perfil', 'Troféus nas conquistas, moeda no saldo. Telas vazias, de carregamento e de erro usam o peão.', [['avisos', 'Avisos'], ['avisosVazio', 'Avisos (vazio)'], ['perfil', 'Meu perfil'], ['jogador', 'Perfil de jogador'], ['carregando', 'Carregando'], ['erro', 'Erro de conexão']]],
+  ['Admin', 'Mesmo sistema, mais sóbrio: cartões brancos e cor só nos ícones e nas ações. A poção apresenta o painel.', [['painel', 'Painel'], ['aprovacoes', 'Aprovações'], ['admEventos', 'Gerenciar eventos'], ['criarEvento', 'Criar evento'], ['usuarios', 'Usuários'], ['financeiro', 'Financeiro'], ['admJogos', 'Acervo de jogos'], ['recompensas', 'Recompensas'], ['conquistas', 'Nova conquista'], ['notificar', 'Enviar aviso'], ['denuncias', 'Denúncias']]],
+];
+
+const root = document.getElementById('root');
+root.innerHTML = SECTIONS.map(([t, d, items]) => `<section class="sec"><h2>${t}</h2><p>${d}</p><div class="grid">${items.map(([k, cap]) => {
+  const html = S[k];
+  const wrapped = html.trim().startsWith('<div class="scr"') ? html : `<div class="scr">${html}</div>`;
+  return `<div class="cell"><div class="phone">${wrapped}</div><div class="cap">${cap}</div></div>`;
+}).join('')}</div></section>`).join('') + `
+<section class="sec"><h2>Animações</h2><p>Clique em cada palco para reproduzir. No app, viram Reanimated + Gesture Handler + háptico leve.</p><div class="grid">
+  <div class="demo"><h3>Botão adesivo</h3><p>Ao tocar, o botão afunda 3px e a sombra some, com mola rápida. Háptico leve no toque.</p><div class="stage"><div class="btn red" onmousedown="this.classList.add('pressed')" onmouseup="this.classList.remove('pressed')" onmouseleave="this.classList.remove('pressed')">Vou nessa!</div><div class="btn">Entrar</div></div></div>
+  <div class="demo"><h3>Entrada dos cartões</h3><p>Cartões sobem com um quique leve, um depois do outro (70ms). Só na primeira vez que a tela abre.</p><div class="stage" onclick="replayStage(this)" style="flex-direction:column;gap:6px"><div class="card anim" style="--i:0;width:200px;padding:8px"></div><div class="card pink anim" style="--i:1;width:200px;padding:8px"></div><div class="card yellow anim" style="--i:2;width:200px;padding:8px"></div></div></div>
+  <div class="demo"><h3>Personagens vivos</h3><p>Respiração lenta e uma piscadela de vez em quando. Param com "reduzir movimento" ligado.</p><div class="stage">${C(14, 90)}${C(7, 70, 'wiggle')}${C(40, 70)}</div></div>
+  <div class="demo"><h3>Check-in com festa</h3><p>Dado pula com "squash and stretch", confete sai do centro, moedas sobem. Háptico de sucesso.</p><div class="stage" onclick="replayStage(this)">${['#E0262B', '#E3156B', '#B9D531', '#7CC8B4', '#4A6FD8', '#F59A23'].map((c, i) => `<i class="confetti" style="top:50%;background:${c};--x:${[-110, 100, -70, 120, -40, 60][i]}px;--y:${[-80, -70, 60, 50, -90, 80][i]}px;--r:${(i % 2 ? 1 : -1) * 260}deg;animation-delay:${i * 80}ms"></i>`).join('')}<div class="jump">${C(22, 90, '')}</div></div></div>
+  <div class="demo"><h3>Curtir</h3><p>Coração cresce, gira e volta com mola. Contador sobe junto.</p><div class="stage" onclick="likeIt(this)"><div class="row f" style="font-size:28px;font-weight:700;gap:8px"><span id="hrt" style="display:inline-flex">${I('heart')}</span><span id="hc">24</span></div></div></div>
+  <div class="demo"><h3>Troca de aba</h3><p>A aba ativa vira um "adesivo" amarelo que dá um pulinho. Badges entram com escala.</p><div class="stage" style="background:var(--bg)"><div class="tabbar" style="position:relative;left:auto;right:auto;bottom:auto;width:260px" onclick="bumpTabs(this)">${['home', 'users', 'dice-5', 'bell', 'user'].map((ic, i) => `<div class="tab ${i === 0 ? 'on' : ''}" data-i="${i}"><div class="tico">${I(ic)}</div></div>`).join('')}</div></div></div>
+</div></section><div style="height:60px"></div>`;
+
+document.getElementById('legend').innerHTML = [['--yellow', 'Amarelo Mipo'], ['--red', 'Vermelho'], ['--pink', 'Magenta'], ['--lime', 'Lima'], ['--teal', 'Verde-água'], ['--lilac', 'Lilás'], ['--bg', 'Fundo'], ['--surface', 'Cartão'], ['--text', 'Texto / contorno']].map(([v, l]) => `<div class="sw"><i style="background:var(${v})"></i>${l}</div>`).join('');
+
+function render() { lucide.createIcons({ attrs: { 'stroke-width': 2.4 } }); }
+function setTheme(t) { document.documentElement.dataset.theme = t; bLight.classList.toggle('on', t === 'light'); bDark.classList.toggle('on', t === 'dark'); }
+function replay() { document.body.classList.remove('play'); void document.body.offsetWidth; document.body.classList.add('play'); }
+function replayStage(el) { const kids = el.querySelectorAll('.anim,.confetti,.jump img'); kids.forEach(k => { k.style.animation = 'none'; void k.offsetWidth; k.style.animation = ''; }); }
+function likeIt(el) { const h = el.querySelector('#hrt'); h.classList.remove('heart-pop'); void h.offsetWidth; h.classList.add('heart-pop'); const c = el.querySelector('#hc'); c.textContent = +c.textContent + 1; h.querySelector('svg').style.fill = 'var(--red)'; }
+function bumpTabs(bar) { const tabs = [...bar.querySelectorAll('.tab')]; const cur = tabs.findIndex(t => t.classList.contains('on')); tabs[cur].classList.remove('on'); tabs[(cur + 1) % tabs.length].classList.add('on'); }
+document.addEventListener('mousedown', e => { const b = e.target.closest('.phone .btn'); if (b) { b.classList.add('pressed'); setTimeout(() => b.classList.remove('pressed'), 140); } });
+render();
+</script>
+</body>
+</html>
