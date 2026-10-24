@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
@@ -26,6 +26,11 @@ export default function EventsListScreen({ navigation }: EventsListScreenProps) 
   const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [celebratedTitle, setCelebratedTitle] = useState<string | null>(null);
+  const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
+  }, []);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -56,7 +61,7 @@ export default function EventsListScreen({ navigation }: EventsListScreenProps) 
     onCheckedIn: () => {
       const title = selectedEvento?.title ?? "";
       setSelectedId(null);
-      setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
+      celebrationTimer.current = setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
     },
   });
 

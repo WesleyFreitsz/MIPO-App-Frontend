@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { BackButton, Button, Hero, Screen, SectionHeader, Skeleton } from "../components/ui";
+import { durations } from "../motion/tokens";
 import AchievementsHighlights from "./components/AchievementsHighlights";
 import { PerfilHero, PerfilPerson, PerfilStats, PostsGrid } from "./perfil/PerfilParts";
 import { SocialPost } from "./social/PostCard";
@@ -14,7 +15,6 @@ import { PostDetailModal, SocialComment } from "./social/PostDetailModal";
 import { ReportSheet } from "./social/SocialSheets";
 import { toggleLike, toggleLikeInFeed } from "./social/socialFormat";
 import { resolveImageForUpload } from "./social/uploadImage";
-import { durations } from "../motion/tokens";
 
 interface PlayerProfileScreenProps {
   route: { params?: object };

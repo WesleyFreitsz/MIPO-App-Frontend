@@ -1,5 +1,8 @@
 import type { AxiosAdapter, InternalAxiosRequestConfig } from "axios";
-import { api, TOKEN_STORAGE_KEY } from "../services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { api } from "../services/api";
+
+const PREVIEW_TOKEN_KEY = "@mipo_token";
 
 const now = Date.now();
 const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -118,7 +121,7 @@ function respond(config: InternalAxiosRequestConfig): unknown {
   const url = (config.url ?? "").split("?")[0];
   const query = config.url?.includes("?") ? config.url.split("?")[1] : "";
   const method = (config.method ?? "get").toLowerCase();
-  if (method !== "get") return { id: "c1", url: "", success: true };
+  if (method !== "get") return url === "/auth/login" ? { access_token: "preview-token" } : { id: "c1", url: "", success: true };
 
   if (url === "/users/profile") return me;
   if (url === "/events") return eventos;
@@ -170,5 +173,6 @@ const previewAdapter: AxiosAdapter = async (config) => ({
 
 export function installPreviewMode() {
   api.defaults.adapter = previewAdapter;
-  globalThis.localStorage?.setItem(TOKEN_STORAGE_KEY, "preview-token");
+  globalThis.localStorage?.setItem(PREVIEW_TOKEN_KEY, "preview-token");
+  AsyncStorage.setItem(PREVIEW_TOKEN_KEY, "preview-token").catch(() => undefined);
 }

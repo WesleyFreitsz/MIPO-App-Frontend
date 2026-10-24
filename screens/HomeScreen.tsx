@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
@@ -56,6 +56,11 @@ export default function HomeScreen() {
   const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [celebratedTitle, setCelebratedTitle] = useState<string | null>(null);
+  const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -96,7 +101,7 @@ export default function HomeScreen() {
     onCheckedIn: () => {
       const title = selectedEvento?.title ?? "";
       setSelectedId(null);
-      setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
+      celebrationTimer.current = setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
     },
   });
 

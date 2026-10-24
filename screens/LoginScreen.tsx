@@ -161,18 +161,16 @@ export default function LoginScreen() {
             </>
           ) : null}
 
-          <>
-              {mode === "register" ? <FieldLabel>E-mail</FieldLabel> : null}
-              <Input
-                icon={Mail}
-                placeholder="seu@email.com"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
-            </>
+          {mode === "register" ? <FieldLabel>E-mail</FieldLabel> : null}
+          <Input
+            icon={Mail}
+            placeholder="seu@email.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+          />
 
           {mode === "register" ? (
             <>
