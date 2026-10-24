@@ -152,6 +152,31 @@ export interface Notification {
 }
 
 /**
+ * EVENTOS
+ */
+
+export interface EventoParticipant {
+  id: string;
+  name: string;
+  nickname?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface EventoDetail {
+  id: string;
+  title: string;
+  description?: string | null;
+  dateTime: string;
+  space: string;
+  customLocation?: string | null;
+  bannerUrl?: string | null;
+  status?: string;
+  chatId?: string | null;
+  participants?: EventoParticipant[];
+  checkedInUserIds?: string[];
+}
+
+/**
  * RESPOSTAS DA API
  */
 

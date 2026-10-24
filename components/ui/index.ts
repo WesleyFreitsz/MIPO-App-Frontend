@@ -26,3 +26,4 @@ export * from "./LoadingState";
 export * from "./Screen";
 export * from "./ScreenHeader";
 export * from "./Skeleton";
+export * from "./SectionHeader";
