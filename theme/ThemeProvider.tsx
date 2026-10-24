@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ColorScheme, Palette, palettes } from "./tokens";
@@ -21,12 +21,13 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
+  const chosenByUser = useRef(false);
 
   useEffect(() => {
     let active = true;
     AsyncStorage.getItem(THEME_PREFERENCE_KEY)
       .then((stored) => {
-        if (active && isThemePreference(stored)) setPreferenceState(stored);
+        if (active && !chosenByUser.current && isThemePreference(stored)) setPreferenceState(stored);
       })
       .catch(() => undefined);
     return () => {
@@ -35,6 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setPreference = useCallback((next: ThemePreference) => {
+    chosenByUser.current = true;
     setPreferenceState(next);
     AsyncStorage.setItem(THEME_PREFERENCE_KEY, next).catch(() => undefined);
   }, []);

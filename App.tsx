@@ -64,8 +64,6 @@ function TabNavigator() {
       {user?.role === "ADMIN" && <Tab.Screen name="Painel" component={AdminDashboard} />}
       <Tab.Screen name="Social" component={SocialScreen} options={{ tabBarBadge: badges.social ? "" : undefined }} />
 
-      {/* A aba Salas segue desligada (RoomsScreen fora do redesign). */}
-
       <Tab.Screen
         name="Notificações"
         component={NotificationsScreen}

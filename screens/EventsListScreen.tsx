@@ -7,6 +7,7 @@ import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { Celebration, EmptyState, ErrorState, Fab, LoadingState, Screen, ScreenHeader, useBottomReserve } from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
+import { durations } from "../motion/tokens";
 import { EventoDetail } from "../types";
 import { EventoCard } from "./evento/EventoCard";
 import { EventoDetailSheet } from "./evento/EventoDetailSheet";
@@ -53,8 +54,9 @@ export default function EventsListScreen({ navigation }: EventsListScreenProps) 
   const { toggleParticipation, checkIn, toggling, checkingIn } = useEventoActions(selectedEvento, {
     onChanged: fetchEvents,
     onCheckedIn: () => {
-      setCelebratedTitle(selectedEvento?.title ?? "");
+      const title = selectedEvento?.title ?? "";
       setSelectedId(null);
+      setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
     },
   });
 

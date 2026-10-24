@@ -19,6 +19,7 @@ import {
   SectionHeader,
 } from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
+import { durations } from "../motion/tokens";
 import { useTheme } from "../theme/ThemeProvider";
 import { AccentName, fontFamily, radius, stroke } from "../theme/tokens";
 import { EventoDetail } from "../types";
@@ -92,8 +93,9 @@ export default function HomeScreen() {
   const { toggleParticipation, checkIn, toggling, checkingIn } = useEventoActions(selectedEvento, {
     onChanged: fetchDashboardData,
     onCheckedIn: () => {
-      setCelebratedTitle(selectedEvento?.title ?? "");
+      const title = selectedEvento?.title ?? "";
       setSelectedId(null);
+      setTimeout(() => setCelebratedTitle(title), durations.modalSwap);
     },
   });
 

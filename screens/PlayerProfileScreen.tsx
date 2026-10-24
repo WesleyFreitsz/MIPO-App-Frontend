@@ -14,6 +14,7 @@ import { PostDetailModal, SocialComment } from "./social/PostDetailModal";
 import { ReportSheet } from "./social/SocialSheets";
 import { toggleLike, toggleLikeInFeed } from "./social/socialFormat";
 import { resolveImageForUpload } from "./social/uploadImage";
+import { durations } from "../motion/tokens";
 
 interface PlayerProfileScreenProps {
   route: { params?: object };
@@ -240,7 +241,7 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
     if (!selectedPost) return;
     setPostToReport({ ...selectedPost, user: selectedPost.user ?? owner });
     setSelectedPost(null);
-    setReportModalVisible(true);
+    setTimeout(() => setReportModalVisible(true), durations.modalSwap);
   };
   const friendshipLabel = isFriend ? "Deixar de seguir" : isPending ? "Pendente" : "Seguir";
   const friendshipIcon = isFriend ? UserMinus : isPending ? Clock : UserPlus;

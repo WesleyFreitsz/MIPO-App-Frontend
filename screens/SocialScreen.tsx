@@ -31,11 +31,6 @@ interface SocialScreenProps {
   route?: { params?: { postId?: string; t?: unknown } };
 }
 
-const tabs: { value: SocialTab; label: string }[] = [
-  { value: "feed", label: "Feed" },
-  { value: "amigos", label: "Amigos" },
-  { value: "conversas", label: "Conversas" },
-];
 
 async function pickImage(): Promise<string | null> {
   const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.5 });
@@ -125,6 +120,13 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
     queryFn: async () => (await api.get(`/posts/${selectedPost?.id}/comments`)).data,
     enabled: !!selectedPost?.id,
   });
+
+  const unreadChats = chatsData?.data?.filter((chat) => (chat.unreadCount ?? 0) > 0).length ?? 0;
+  const tabs: { value: SocialTab; label: string }[] = [
+    { value: "feed", label: "Feed" },
+    { value: "amigos", label: "Amigos" },
+    { value: "conversas", label: unreadChats > 0 ? `Conversas (${unreadChats})` : "Conversas" },
+  ];
 
   const pendingCount = Array.isArray(pendingRequests) ? pendingRequests.length : (pendingRequests?.data?.length ?? 0);
 

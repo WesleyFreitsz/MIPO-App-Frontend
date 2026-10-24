@@ -161,8 +161,7 @@ export default function LoginScreen() {
             </>
           ) : null}
 
-          {mode !== "reset" ? (
-            <>
+          <>
               {mode === "register" ? <FieldLabel>E-mail</FieldLabel> : null}
               <Input
                 icon={Mail}
@@ -174,7 +173,6 @@ export default function LoginScreen() {
                 autoComplete="email"
               />
             </>
-          ) : null}
 
           {mode === "register" ? (
             <>
@@ -183,7 +181,11 @@ export default function LoginScreen() {
             </>
           ) : null}
 
-          {mode === "reset" ? <CodeInput length={6} value={recoveryCode} onChange={setRecoveryCode} /> : null}
+          {mode === "reset" ? (
+            <View style={{ marginTop: 12 }}>
+              <CodeInput length={6} value={recoveryCode} onChange={setRecoveryCode} />
+            </View>
+          ) : null}
 
           {mode !== "forgot" ? (
             <View style={{ marginTop: mode === "register" ? 0 : 10 }}>
