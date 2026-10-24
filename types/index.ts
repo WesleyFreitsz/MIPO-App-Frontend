@@ -152,6 +152,22 @@ export interface Notification {
 }
 
 /**
+ * JOGOS
+ */
+
+export interface Jogo {
+  id: string;
+  name: string;
+  category?: string | string[] | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+  imageUrl?: string | null;
+  description?: string | null;
+  videoUrl?: string | null;
+  isFeatured?: boolean;
+}
+
+/**
  * EVENTOS
  */
 
