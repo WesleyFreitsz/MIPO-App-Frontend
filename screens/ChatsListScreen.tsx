@@ -43,7 +43,9 @@ export default function ChatsListScreen({ navigation }: any) {
       },
       initialPageParam: 0,
       getNextPageParam: (lastPage) =>
-        lastPage.hasMore ? lastPage.skip + lastPage.take : undefined,
+        lastPage.hasMore
+          ? Number(lastPage.skip) + Number(lastPage.take)
+          : undefined,
     });
 
   // Junta todas as páginas carregadas em um único array

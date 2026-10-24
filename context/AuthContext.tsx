@@ -1,7 +1,17 @@
-import React, { createContext, useState, useEffect, useContext } from "react";
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+} from "react";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { api } from "../services/api";
+import {
+  api,
+  setUnauthorizedHandler,
+  TOKEN_STORAGE_KEY,
+} from "../services/api";
 import { io, Socket } from "socket.io-client";
 
 type Achievement = {
@@ -30,7 +40,7 @@ type AuthContextData = {
   loading: boolean;
   signIn: (loginData: any) => Promise<void>;
   signUp: (registerData: any) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
 
@@ -61,10 +71,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const socketInstance = io(socketUrl, {
         transports: ["websocket"],
+        auth: { token },
       });
 
       socketInstance.on("connect", () => {
-        socketInstance.emit("auth", { userId: user.id });
+        socketInstance.emit("auth");
       });
 
       // Escuta notificações em tempo real
@@ -83,9 +94,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [user?.id, token]);
 
+  const clearSession = useCallback(async () => {
+    await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+    delete api.defaults.headers.common["Authorization"];
+    setUser(null);
+    setToken(null);
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      clearSession();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
+
   useEffect(() => {
     async function loadStorageData() {
-      const storedToken = await AsyncStorage.getItem("@mipo_token");
+      const storedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
       if (storedToken) {
         setToken(storedToken);
         api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
@@ -101,7 +126,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const newToken = response.data.access_token;
     setToken(newToken);
     api.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
-    await AsyncStorage.setItem("@mipo_token", newToken);
+    await AsyncStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     await refreshUser();
   }
 
@@ -115,16 +140,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const newToken = response.data.access_token;
     setToken(newToken);
     api.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
-    await AsyncStorage.setItem("@mipo_token", newToken);
+    await AsyncStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     await refreshUser();
   }
 
-  function signOut() {
-    AsyncStorage.removeItem("@mipo_token").then(() => {
-      setUser(null);
-      setToken(null);
-      delete api.defaults.headers.common["Authorization"];
-    });
+  async function signOut() {
+    try {
+      await api.patch("/users/notification-token", { token: null });
+    } catch (error) {
+      console.warn("Não foi possível remover o token de push", error);
+    }
+    await clearSession();
   }
 
   return (

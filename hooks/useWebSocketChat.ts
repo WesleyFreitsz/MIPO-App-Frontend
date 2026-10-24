@@ -31,6 +31,7 @@ interface UseWebSocketChatReturn {
 import { api } from "../services/api";
 
 const WS_URL = api.defaults.baseURL || "http://localhost:3000";
+const MAX_LIVE_MESSAGES = 200;
 
 export const useWebSocketChat = (): UseWebSocketChatReturn => {
   const { user, token } = useAuth();
@@ -59,7 +60,7 @@ export const useWebSocketChat = (): UseWebSocketChatReturn => {
       console.log("[WS] Conectado ao servidor");
       setIsConnected(true);
       // Autenticar após conectar
-      newSocket.emit("auth", { userId: user.id });
+      newSocket.emit("auth");
     });
 
     newSocket.on("auth:success", () => {
@@ -78,7 +79,7 @@ export const useWebSocketChat = (): UseWebSocketChatReturn => {
     // Eventos de mensagens
     newSocket.on("message:new", (message: WebSocketMessage) => {
       console.log("[WS] Nova mensagem recebida:", message);
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => [...prev, message].slice(-MAX_LIVE_MESSAGES));
     });
 
     newSocket.on("message:marked-read", (data: any) => {
