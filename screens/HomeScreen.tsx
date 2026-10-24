@@ -26,12 +26,13 @@ import { EventoDetail } from "../types";
 import { EventoCard } from "./evento/EventoCard";
 import { EventoDetailSheet } from "./evento/EventoDetailSheet";
 import { eventoParticipation, upcomingApprovedEventos } from "./evento/eventoState";
+import { categoriesText } from "./jogo/jogoFormat";
 import { useEventoActions } from "./evento/useEventoActions";
 
 interface FeaturedGame {
   id: string;
   name: string;
-  category?: string | null;
+  category?: string | string[] | null;
   imageUrl?: string | null;
 }
 
@@ -195,7 +196,7 @@ export default function HomeScreen() {
                     <GameTile
                       key={game.id}
                       name={game.name}
-                      meta={game.category ?? undefined}
+                      meta={categoriesText(game.category) || undefined}
                       imageUrl={game.imageUrl}
                       tone={tileTones[index % tileTones.length]}
                       tilt={tileTilts[index % tileTilts.length]}

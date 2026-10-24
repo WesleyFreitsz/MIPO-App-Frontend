@@ -201,8 +201,7 @@ export default function NotificationsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item, index) => `${item.kind === "request" ? item.request.id : item.notification.id}-${index}`}
-        style={{ marginHorizontal: -14 }}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: bottomReserve, gap: 10 }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: bottomReserve, gap: 10 }}
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl(activeTab === "requests" ? isFetchingReqs && !hasNextReqs : isFetchingNotifs && !hasNextNotifs)}

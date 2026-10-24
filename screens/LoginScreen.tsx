@@ -119,7 +119,7 @@ export default function LoginScreen() {
             >
               mipo
             </MipoText>
-            <MipoText variant="caption" color="text">
+            <MipoText variant="caption" color="text" style={{ marginTop: 6 }}>
               a sua mesa tá te esperando
             </MipoText>
           </StaggerIn>

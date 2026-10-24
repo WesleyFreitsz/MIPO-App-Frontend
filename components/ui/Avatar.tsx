@@ -30,13 +30,14 @@ export interface AvatarProps {
   uri?: string | null;
   size?: AvatarSize;
   online?: boolean;
+  tone?: AccentName;
   testID?: string;
 }
 
-export function Avatar({ name, id, uri, size = "md", online = false, testID }: AvatarProps) {
+export function Avatar({ name, id, uri, size = "md", online = false, tone: toneOverride, testID }: AvatarProps) {
   const { colors } = useTheme();
   const px = sizes[size];
-  const tone = avatarTone(id);
+  const tone = toneOverride ?? avatarTone(id);
   const border = size === "lg" ? stroke.thick : size === "sm" ? stroke.thin : stroke.regular;
 
   return (

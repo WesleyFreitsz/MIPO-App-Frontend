@@ -36,7 +36,7 @@ export function PerfilHero({ person, tone, topLeft, topRight, coins, onCoinsPres
         <View>{topLeft}</View>
         <View style={{ flexDirection: "row", gap: 8 }}>{topRight}</View>
       </View>
-      <Avatar id={person.id} name={person.name} uri={person.avatarUrl} size="lg" />
+      <Avatar id={person.id} name={person.name} uri={person.avatarUrl} size="lg" tone="yellow" />
       <MipoText variant="screenTitle" style={{ color: foreground, marginTop: 8, textAlign: "center" }}>
         {person.name}
       </MipoText>

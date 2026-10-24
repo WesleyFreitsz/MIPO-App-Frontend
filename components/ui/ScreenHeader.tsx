@@ -41,7 +41,8 @@ export function BackButton({ onPress }: { onPress: () => void }) {
 
 export function ScreenHeader({ title, onBack, right, subtitle }: ScreenHeaderProps) {
   const navigation = useContext(NavigationContext);
-  const canGoBack = Boolean(onBack) || Boolean(navigation?.canGoBack());
+  const insideTabs = navigation?.getState()?.type === "tab";
+  const canGoBack = Boolean(onBack) || (!insideTabs && Boolean(navigation?.canGoBack()));
   const handleBack = onBack ?? (() => navigation?.goBack());
 
   return (
