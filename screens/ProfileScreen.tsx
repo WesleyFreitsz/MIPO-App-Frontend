@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { AtSign, Camera, FileText, MapPin, Settings, User as UserIcon } from "lucide-react-native";
+import { AtSign, FileText, MapPin, Pencil, Settings, User as UserIcon } from "lucide-react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
-import { Button, FieldLabel, IconBox, IconButton, Input, Screen, SectionHeader } from "../components/ui";
+import { uploadMedia, UploadError } from "../services/uploads";
+import { Button, FieldLabel, IconButton, Input, MipoText, Screen, SectionHeader, showAlert } from "../components/ui";
 import AchievementsHighlights from "./components/AchievementsHighlights";
 import { FriendsSheet, PerfilHero, PerfilPerson, PerfilStats, PostsGrid } from "./perfil/PerfilParts";
+import { PlayHistorySection } from "./perfil/PlayHistorySection";
 import { ThemePreferenceSheet } from "./perfil/ThemePreferenceSheet";
 import { SocialPost } from "./social/PostCard";
 import { PostDetailModal, SocialComment } from "./social/PostDetailModal";
+import { PostEditorModal } from "./social/PostEditorModal";
+import { usePostEditor } from "./social/usePostEditor";
 import { toggleLike, toggleLikeInFeed } from "./social/socialFormat";
 
 interface ProfileScreenProps {
@@ -44,6 +48,7 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedPost, setSelectedPost] = useState<UserPost | null>(null);
+  const postEditor = usePostEditor({ onDeleted: () => setSelectedPost(null) });
   const [commentText, setCommentText] = useState("");
   const [editingComment, setEditingComment] = useState<SocialComment | null>(null);
 
@@ -124,39 +129,46 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
     },
   });
 
-  const uploadImageAsync = async (uri: string) => {
-    if (uri.startsWith("http") || uri.startsWith("data:")) return uri;
+  const pickAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
+    if (result.canceled) return;
+
+    setIsUploading(true);
     try {
-      setIsUploading(true);
-      const formData = new FormData();
-      const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      formData.append("file", { uri, name: filename, type: match ? `image/${match[1]}` : "image/jpeg" } as unknown as Blob);
-      const res = await api.post("/uploads/avatar", formData, { headers: { "Content-Type": "multipart/form-data" } });
-      return res.data.url;
-    } catch {
-      return null;
+      const uploadedUrl = await uploadMedia(result.assets[0], "/uploads/avatar");
+      if (editMode) {
+        setImage(uploadedUrl);
+        return;
+      }
+      await api.patch("/users/profile", { avatarUrl: uploadedUrl });
+      await refreshUser();
+      setImage(uploadedUrl);
+      showAlert("Foto atualizada!");
+    } catch (error) {
+      const message = error instanceof UploadError ? error.message : "Não foi possível salvar a nova foto.";
+      showAlert("Não foi possível trocar a foto", message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const pickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (!result.canceled) {
-      const uploaded = await uploadImageAsync(result.assets[0].uri);
-      if (uploaded) setImage(uploaded);
-    }
+  const startEditing = () => {
+    setName(user?.name || "");
+    setNickname(user?.nickname || "");
+    setCity(user?.city || "");
+    setBio(user?.bio || "");
+    setImage(user?.avatarUrl || null);
+    setEditMode(true);
   };
 
   const handleSaveProfile = async () => {
-    if (!name || !nickname || !city) return Alert.alert("Atenção", "Nome, Nickname e Cidade são obrigatórios.");
+    if (!name || !nickname || !city) return showAlert("Atenção", "Nome, Nickname e Cidade são obrigatórios.");
     try {
       await api.patch("/users/profile", { name, nickname, city, bio, avatarUrl: image });
       await refreshUser();
       setEditMode(false);
     } catch {
-      Alert.alert("Erro", "Erro ao salvar o perfil.");
+      showAlert("Erro", "Erro ao salvar o perfil.");
     }
   };
 
@@ -186,16 +198,18 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
           person={person}
           tone="pink"
           coins={user.coins ?? 0}
-          onCoinsPress={() => Alert.alert("Sua carteira", `Você possui ${user.coins || 0} moedas disponíveis.`)}
-          topLeft={
-            editMode ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Trocar foto" onPress={pickAvatar}>
-                <IconBox icon={Camera} tone="yellow" size={38} round />
-              </Pressable>
-            ) : null
-          }
+          onCoinsPress={() => navigation.navigate("RewardsStore")}
+          onAvatarPress={pickAvatar}
+          avatarUploading={isUploading}
           topRight={<IconButton icon={Settings} accessibilityLabel="Configurações" onPress={() => setShowSettings(true)} />}
-        />
+        >
+          {editMode ? null : <Button label="Editar perfil" icon={Pencil} size="sm" onPress={startEditing} />}
+        </PerfilHero>
+        {editMode ? (
+          <MipoText variant="caption" style={{ textAlign: "center", marginTop: 10 }}>
+            Toque na foto para trocar a imagem
+          </MipoText>
+        ) : null}
 
         {editMode ? (
           <View style={{ marginTop: 6 }}>
@@ -222,6 +236,7 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
               ]}
             />
             <AchievementsHighlights triggerOpenAll={triggerOpenAchievements || clickOpenAchievements} userId={user.id} isOwnProfile />
+            <PlayHistorySection userId={user.id} isOwnProfile />
             <SectionHeader title="Meus posts" />
             <PostsGrid posts={posts} loading={isLoadingPosts} onOpen={(post) => setSelectedPost(posts.find((p) => p.id === post.id) ?? null)} />
           </>
@@ -232,12 +247,11 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
         visible={showSettings}
         onEditProfile={() => {
           setShowSettings(false);
-          setName(user.name || "");
-          setNickname(user.nickname || "");
-          setCity(user.city || "");
-          setBio(user.bio || "");
-          setImage(user.avatarUrl || null);
-          setEditMode(true);
+          startEditing();
+        }}
+        onOpenAccountSettings={() => {
+          setShowSettings(false);
+          navigation.navigate("Settings");
         }}
         onSignOut={() => {
           setShowSettings(false);
@@ -272,18 +286,23 @@ export default function ProfileScreen({ route, navigation }: ProfileScreenProps)
           setCommentText("");
         }}
         onDeleteComment={(comment) =>
-          Alert.alert("Apagar", "Deseja apagar este comentário?", [
+          showAlert("Apagar", "Deseja apagar este comentário?", [
             { text: "Cancelar", style: "cancel" },
             { text: "Apagar", style: "destructive", onPress: () => deleteCommentMutation.mutate(comment.id) },
           ])
         }
         onLike={() => selectedPost && toggleLikeMutation.mutate(selectedPost)}
-        onEditPost={() => undefined}
-        onDeletePost={() => undefined}
-        hidePostActions
+        onEditPost={() => {
+          const post = selectedPost;
+          setSelectedPost(null);
+          if (post) postEditor.startEdit(post);
+        }}
+        onDeletePost={() => selectedPost && postEditor.confirmDelete(selectedPost.id)}
         onOpenProfile={openProfile}
         onClose={() => setSelectedPost(null)}
       />
+
+      <PostEditorModal {...postEditor.editorProps} />
     </>
   );
 }

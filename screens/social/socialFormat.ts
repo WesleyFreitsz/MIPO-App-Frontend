@@ -37,14 +37,6 @@ export function filterChats<T extends { type: string }>(chats: T[] | undefined, 
   });
 }
 
-export function filterAvailableUsers<T extends { name?: string | null; nickname?: string | null }>(users: T[] | undefined, query: string): T[] {
-  const term = query.trim().replace(/^@/, "").toLowerCase();
-  if (!term) return users ?? [];
-  return (users ?? []).filter(
-    (user) => user.nickname?.toLowerCase().includes(term) || user.name?.toLowerCase().includes(term),
-  );
-}
-
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }

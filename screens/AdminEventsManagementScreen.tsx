@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from "react";
-import { Alert, FlatList, ScrollView, View } from "react-native";
+import React, { useState } from "react";
+import { FlatList, RefreshControl, ScrollView, View } from "react-native";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -20,7 +20,9 @@ import {
   Screen,
   ScreenHeader,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
+import { useTheme } from "../theme/ThemeProvider";
 import { EventoDetail } from "../types";
 import { EventoCard } from "./evento/EventoCard";
 
@@ -64,85 +66,70 @@ function statusChip(status: string | undefined): { label: string; tone: ChipTone
 
 export default function AdminEventsManagementScreen({ navigation }: AdminEventsManagementScreenProps) {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const queryClient = useQueryClient();
   const bottomReserve = useBottomReserve(false);
-  const [events, setEvents] = useState<AdminEvento[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
 
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get<AdminEvento[]>("/events/admin/all");
-      setEvents(response.data);
-    } catch (caught) {
-      const error = caught as ApiError;
-      console.log("Detalhes do erro:", error.response?.data || error.message);
-      Alert.alert(
-        "Erro",
-        error.response?.data?.message || "Não foi possível carregar a lista.",
-      );
-    } finally {
-      setLoading(false);
-    }
+  const eventsQuery = useQuery<AdminEvento[]>({
+    queryKey: ["admin", "events"],
+    queryFn: async () => (await api.get<AdminEvento[]>("/events/admin/all")).data,
+  });
+  const events = eventsQuery.data ?? [];
+
+  const refreshEvents = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin", "events"] });
+    queryClient.invalidateQueries({ queryKey: ["events"] });
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchEvents();
-    }, []),
-  );
+  const errorMessage = (caught: unknown, fallback: string) => (caught as ApiError).response?.data?.message || fallback;
 
-  const handleApprove = async (id: string) => {
-    Alert.alert("Aprovar", "Deseja confirmar a aprovação deste evento?", [
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/events/${id}/approve`),
+    onSuccess: () => {
+      showAlert("Sucesso", "Evento aprovado e visível para todos!");
+      refreshEvents();
+    },
+    onError: (caught) => showAlert("Erro", errorMessage(caught, "Falha ao aprovar evento.")),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => api.patch(`/events/${id}/reject`, { reason }),
+    onSuccess: () => {
+      setRejectModalVisible(false);
+      setReason("");
+      refreshEvents();
+      showAlert("Sucesso", "Evento reprovado.");
+    },
+    onError: (caught) => showAlert("Erro", errorMessage(caught, "Falha ao recusar evento.")),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/events/${id}`),
+    onSuccess: refreshEvents,
+    onError: (caught) => showAlert("Erro", errorMessage(caught, "Falha ao excluir.")),
+  });
+
+  const handleApprove = (id: string) => {
+    showAlert("Aprovar", "Deseja confirmar a aprovação deste evento?", [
       { text: "Cancelar", style: "cancel" },
-      {
-        text: "Aprovar",
-        onPress: async () => {
-          try {
-            await api.patch(`/events/${id}/approve`);
-            Alert.alert("Sucesso", "Evento aprovado e visível para todos!");
-            fetchEvents();
-          } catch (e) {
-            Alert.alert("Erro", "Falha ao aprovar evento.");
-          }
-        },
-      },
+      { text: "Aprovar", onPress: () => approveMutation.mutate(id) },
     ]);
   };
 
-  const handleReject = async () => {
-    if (!reason.trim())
-      return Alert.alert("Atenção", "Informe o motivo da recusa.");
-    try {
-      await api.patch(`/events/${selectedId}/reject`, { reason });
-      setRejectModalVisible(false);
-      setReason("");
-      fetchEvents();
-      Alert.alert("Sucesso", "Evento reprovado.");
-    } catch (e) {
-      Alert.alert("Erro", "Falha ao recusar evento.");
-    }
+  const handleReject = () => {
+    if (!reason.trim()) return showAlert("Atenção", "Informe o motivo da recusa.");
+    if (selectedId) rejectMutation.mutate({ id: selectedId, reason });
   };
 
   const handleDelete = (id: string) => {
-    Alert.alert("Excluir", "Deseja remover permanentemente este evento?", [
+    showAlert("Excluir", "Deseja remover permanentemente este evento?", [
       { text: "Voltar", style: "cancel" },
-      {
-        text: "Excluir",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await api.delete(`/events/${id}`);
-            fetchEvents();
-          } catch (e) {
-            Alert.alert("Erro", "Falha ao excluir.");
-          }
-        },
-      },
+      { text: "Excluir", style: "destructive", onPress: () => deleteMutation.mutate(id) },
     ]);
   };
 
@@ -158,6 +145,7 @@ export default function AdminEventsManagementScreen({ navigation }: AdminEventsM
   const renderEvent = ({ item }: { item: AdminEvento }) => {
     const status = statusChip(item.status);
     const isAdmin = user?.role === "ADMIN";
+    const canApprove = isAdmin || user?.role === "MODERATOR";
     const isOwner = item.creator?.id === user?.id;
     const canManage = isAdmin || isOwner;
     const isPending = item.status === "PENDING";
@@ -186,7 +174,7 @@ export default function AdminEventsManagementScreen({ navigation }: AdminEventsM
             </>
           ) : null}
         </View>
-        {isAdmin && isPending ? (
+        {canApprove && isPending ? (
           <View style={{ flexDirection: "row", gap: 10 }}>
             <Button label="Aprovar" icon={Check} variant="lime" size="sm" onPress={() => handleApprove(item.id)} style={{ flex: 1 }} />
             <Button
@@ -229,7 +217,7 @@ export default function AdminEventsManagementScreen({ navigation }: AdminEventsM
         </ScrollView>
       </View>
 
-      {loading ? (
+      {eventsQuery.isLoading ? (
         <LoadingState />
       ) : (
         <FlatList
@@ -239,7 +227,14 @@ export default function AdminEventsManagementScreen({ navigation }: AdminEventsM
           style={{ marginHorizontal: -14 }}
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: bottomReserve + 80, gap: 18 }}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<EmptyState character="peao2" title="Nenhum evento encontrado." />}
+          refreshControl={<RefreshControl refreshing={eventsQuery.isRefetching} onRefresh={refreshEvents} tintColor={colors.pink} />}
+          ListEmptyComponent={
+            <EmptyState
+              character="peao2"
+              title={eventsQuery.isError ? "Não foi possível carregar a lista." : "Nenhum evento encontrado."}
+              action={eventsQuery.isError ? { label: "Tentar de novo", onPress: () => eventsQuery.refetch() } : undefined}
+            />
+          }
         />
       )}
 
@@ -260,7 +255,7 @@ export default function AdminEventsManagementScreen({ navigation }: AdminEventsM
         />
         <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
           <Button label="Voltar" variant="ghost" onPress={closeRejectSheet} style={{ flex: 1 }} />
-          <Button label="Confirmar Recusa" variant="red" onPress={handleReject} style={{ flex: 1 }} />
+          <Button label="Confirmar Recusa" variant="red" loading={rejectMutation.isPending} onPress={handleReject} style={{ flex: 1 }} />
         </View>
       </BottomSheet>
     </Screen>

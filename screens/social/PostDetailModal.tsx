@@ -6,6 +6,7 @@ import { Avatar, Button, IconButton, Input, MipoText } from "../../components/ui
 import { useTheme } from "../../theme/ThemeProvider";
 import { stroke } from "../../theme/tokens";
 import { LikeButton } from "./LikeButton";
+import { MentionText } from "./MentionText";
 import { SocialPost } from "./PostCard";
 import { SocialUser, relativeTime } from "./socialFormat";
 
@@ -34,6 +35,7 @@ export interface PostDetailModalProps {
   onClose: () => void;
   hidePostActions?: boolean;
   onReportPost?: () => void;
+  canModerate?: boolean;
 }
 
 export function PostDetailModal({
@@ -55,6 +57,7 @@ export function PostDetailModal({
   onClose,
   hidePostActions = false,
   onReportPost,
+  canModerate = false,
 }: PostDetailModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -77,8 +80,13 @@ export function PostDetailModal({
               <IconButton icon={Pencil} accessibilityLabel="Editar post" onPress={onEditPost} size={34} />
               <IconButton icon={Trash2} accessibilityLabel="Excluir post" tone="red" onPress={onDeletePost} size={34} />
             </>
-          ) : onReportPost && post.user.id !== currentUser?.id ? (
-            <IconButton icon={Flag} accessibilityLabel="Denunciar post" onPress={onReportPost} size={34} />
+          ) : post.user.id !== currentUser?.id ? (
+            <>
+              {onReportPost ? <IconButton icon={Flag} accessibilityLabel="Denunciar post" onPress={onReportPost} size={34} /> : null}
+              {canModerate ? (
+                <IconButton icon={Trash2} accessibilityLabel="Excluir post (moderação)" tone="red" onPress={onDeletePost} size={34} />
+              ) : null}
+            </>
           ) : null}
         </View>
 
@@ -101,7 +109,7 @@ export function PostDetailModal({
                   <MipoText variant="micro">{relativeTime(post.createdAt)}</MipoText>
                 </View>
               </Pressable>
-              {post.content ? <MipoText variant="bodyBold">{post.content}</MipoText> : null}
+              {post.content ? <MentionText variant="bodyBold">{post.content}</MentionText> : null}
               {post.imageUrl ? (
                 <Image
                   source={{ uri: post.imageUrl }}
@@ -122,7 +130,7 @@ export function PostDetailModal({
                 <MipoText variant="micro" color="text">
                   {item.user.nickname || item.user.name}
                 </MipoText>
-                <MipoText variant="body">{item.content}</MipoText>
+                <MentionText variant="body">{item.content}</MentionText>
               </View>
               {item.user.id === currentUser?.id ? (
                 <View style={{ flexDirection: "row", gap: 12 }}>

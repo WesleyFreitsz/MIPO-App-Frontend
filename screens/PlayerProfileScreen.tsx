@@ -1,14 +1,15 @@
 import React, { useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { Clock, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
+import { Ban, Clock, Flag, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { BackButton, Button, Hero, Screen, SectionHeader, Skeleton } from "../components/ui";
+import { BackButton, Button, Hero, Screen, SectionHeader, Skeleton, showAlert } from "../components/ui";
 import { durations } from "../motion/tokens";
 import AchievementsHighlights from "./components/AchievementsHighlights";
+import { PlayHistorySection } from "./perfil/PlayHistorySection";
 import { PerfilHero, PerfilPerson, PerfilStats, PostsGrid } from "./perfil/PerfilParts";
 import { SocialPost } from "./social/PostCard";
 import { PostDetailModal, SocialComment } from "./social/PostDetailModal";
@@ -86,6 +87,27 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
 
   const isFriend = statusData?.status === "ACCEPTED";
   const isPending = statusData?.status === "PENDING";
+  const isBlocked = statusData?.status === "BLOCKED";
+
+  const blockMutation = useMutation({
+    mutationFn: () => (isBlocked ? api.delete(`/friends/${userId}`) : api.post(`/friends/${userId}/block`)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["friendship", userId] });
+      queryClient.invalidateQueries({ queryKey: ["friends"] });
+      queryClient.invalidateQueries({ queryKey: ["blockedUsers"] });
+    },
+    onError: (error: unknown) => {
+      showAlert("Aviso", apiError(error)?.data?.message || "Não foi possível alterar o bloqueio agora.");
+    },
+  });
+
+  const confirmBlock = () => {
+    if (isBlocked) return blockMutation.mutate();
+    showAlert("Bloquear", "Essa pessoa não poderá mais te mandar mensagens nem aparecer nas suas buscas. Bloquear?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Bloquear", style: "destructive", onPress: () => blockMutation.mutate() },
+    ]);
+  };
 
   const toggleFriendshipMutation = useMutation({
     mutationFn: async () => {
@@ -113,7 +135,7 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
       queryClient.invalidateQueries({ queryKey: ["friends", "available"] });
     },
     onError: (error: unknown) => {
-      Alert.alert("Aviso", apiError(error)?.data?.message || "Não foi possível alterar a amizade no momento.");
+      showAlert("Aviso", apiError(error)?.data?.message || "Não foi possível alterar a amizade no momento.");
     },
   });
 
@@ -168,29 +190,28 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
         name: userData?.nickname || userData?.name,
       });
     } catch {
-      Alert.alert("Erro", "Erro ao abrir chat");
+      showAlert("Erro", "Erro ao abrir chat");
     }
   };
 
   const handleReportPost = async () => {
-    if (!reportReason.trim()) return Alert.alert("Atenção", "Preencha o motivo da denúncia.");
-    if (!postToReport) return;
+    if (!reportReason.trim()) return showAlert("Atenção", "Preencha o motivo da denúncia.");
     setIsReporting(true);
     const finalImage = await resolveImageForUpload(reportImage);
     try {
       await api.post("/reports", {
-        postId: postToReport.id,
-        reportedUserId: postToReport.user.id,
+        ...(postToReport ? { postId: postToReport.id } : { type: "USER" }),
+        reportedUserId: postToReport?.user.id ?? userId,
         reason: reportReason,
         imageUrl: finalImage,
       });
-      Alert.alert("Sucesso", "A denúncia foi enviada para análise.");
+      showAlert("Sucesso", "A denúncia foi enviada para análise.");
       setReportModalVisible(false);
       setReportReason("");
       setReportImage(null);
       setPostToReport(null);
     } catch {
-      Alert.alert("Erro", "Erro ao denunciar.");
+      showAlert("Erro", "Erro ao denunciar.");
     } finally {
       setIsReporting(false);
     }
@@ -250,7 +271,9 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
     <>
       <Screen scroll safeTop={false}>
         <PerfilHero person={userData} tone="teal" topLeft={backButton}>
-          {currentUser?.id !== userId ? (
+          {currentUser?.id !== userId && isBlocked ? (
+            <Button label="Desbloquear" icon={Ban} variant="ghost" size="sm" loading={blockMutation.isPending} onPress={confirmBlock} />
+          ) : currentUser?.id !== userId ? (
             <>
               <Button
                 label={friendshipLabel}
@@ -261,6 +284,17 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
                 onPress={() => toggleFriendshipMutation.mutate()}
               />
               <Button label="Mensagem" icon={MessageCircle} variant="ghost" size="sm" onPress={handleSendMessage} />
+              <Button label="Bloquear" icon={Ban} variant="ghost" size="sm" loading={blockMutation.isPending} onPress={confirmBlock} />
+              <Button
+                label="Denunciar"
+                icon={Flag}
+                variant="ghost"
+                size="sm"
+                onPress={() => {
+                  setPostToReport(null);
+                  setReportModalVisible(true);
+                }}
+              />
             </>
           ) : null}
         </PerfilHero>
@@ -274,6 +308,7 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
 
         <AchievementsHighlights userId={userData.id} isOwnProfile={false} triggerOpenAll={clickOpenAchievements} />
 
+        {isBlocked ? null : <PlayHistorySection userId={userId} viewerId={currentUser?.id} />}
         <SectionHeader title="Posts" />
         <PostsGrid posts={posts} loading={isLoadingPosts} onOpen={(post) => setSelectedPost(posts.find((p) => p.id === post.id) ?? null)} />
       </Screen>
@@ -296,7 +331,7 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
           setCommentText("");
         }}
         onDeleteComment={(comment) =>
-          Alert.alert("Apagar", "Deseja apagar este comentário?", [
+          showAlert("Apagar", "Deseja apagar este comentário?", [
             { text: "Cancelar", style: "cancel" },
             { text: "Apagar", style: "destructive", onPress: () => deleteCommentMutation.mutate(comment.id) },
           ])
@@ -312,6 +347,7 @@ export default function PlayerProfileScreen({ route, navigation }: PlayerProfile
 
       <ReportSheet
         visible={reportModalVisible}
+        title={postToReport ? "Denunciar post" : "Denunciar perfil"}
         reason={reportReason}
         image={reportImage}
         sending={isReporting}

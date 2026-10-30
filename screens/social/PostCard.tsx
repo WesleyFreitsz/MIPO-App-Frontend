@@ -5,6 +5,7 @@ import { Avatar, Card, MipoText } from "../../components/ui";
 import { useTheme } from "../../theme/ThemeProvider";
 import { stroke } from "../../theme/tokens";
 import { LikeButton } from "./LikeButton";
+import { MentionText } from "./MentionText";
 import { SocialUser, relativeTime } from "./socialFormat";
 
 export interface SocialPost {
@@ -21,6 +22,7 @@ export interface SocialPost {
 export interface PostCardProps {
   post: SocialPost;
   isMine: boolean;
+  canModerate?: boolean;
   onOpen: () => void;
   onLike: () => void;
   onEdit: () => void;
@@ -37,7 +39,7 @@ function SmallAction({ label, onPress, children }: { label: string; onPress: () 
   );
 }
 
-export function PostCard({ post, isMine, onOpen, onLike, onEdit, onDelete, onReport, onOpenProfile }: PostCardProps) {
+export function PostCard({ post, isMine, canModerate = false, onOpen, onLike, onEdit, onDelete, onReport, onOpenProfile }: PostCardProps) {
   const { colors } = useTheme();
   return (
     <Card>
@@ -63,16 +65,23 @@ export function PostCard({ post, isMine, onOpen, onLike, onEdit, onDelete, onRep
             </SmallAction>
           </>
         ) : (
-          <SmallAction label="Denunciar post" onPress={onReport}>
-            <Flag size={18} color={colors.muted} />
-          </SmallAction>
+          <>
+            <SmallAction label="Denunciar post" onPress={onReport}>
+              <Flag size={18} color={colors.muted} />
+            </SmallAction>
+            {canModerate ? (
+              <SmallAction label="Excluir post (moderação)" onPress={onDelete}>
+                <Trash2 size={18} color={colors.red} />
+              </SmallAction>
+            ) : null}
+          </>
         )}
       </View>
 
       {post.content ? (
-        <MipoText variant="bodyBold" style={{ marginTop: 8 }}>
+        <MentionText variant="bodyBold" style={{ marginTop: 8 }}>
           {post.content}
-        </MipoText>
+        </MentionText>
       ) : null}
 
       {post.imageUrl ? (

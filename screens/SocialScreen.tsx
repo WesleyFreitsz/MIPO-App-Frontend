@@ -1,12 +1,10 @@
-import React, { useEffect, useState } from "react";
-import { Alert, View } from "react-native";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as ImagePicker from "expo-image-picker";
+import React, { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
+import { InfiniteData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, SquarePen, UserPlus } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
-import { useWebSocketChat } from "../hooks/useWebSocketChat";
-import { IconButton, Screen, ScreenHeader, SegmentedControl, useBottomReserve } from "../components/ui";
+import { IconButton, Screen, ScreenHeader, SegmentedControl, useBottomReserve, showAlert } from "../components/ui";
 import { AmigosTab } from "./social/AmigosTab";
 import { ConversasTab } from "./social/ConversasTab";
 import { FeedTab } from "./social/FeedTab";
@@ -14,14 +12,26 @@ import { SocialPost } from "./social/PostCard";
 import { PostDetailModal, SocialComment } from "./social/PostDetailModal";
 import { PostEditorModal } from "./social/PostEditorModal";
 import { AddFriendsSheet, NewChatSheet, ReportSheet } from "./social/SocialSheets";
-import { ChatFilter, SocialChat, SocialUser, filterAvailableUsers, filterChats, toggleLike, toggleLikeInFeed } from "./social/socialFormat";
+import { ChatFilter, SocialChat, SocialUser, filterChats, toggleLike, toggleLikeInFeed } from "./social/socialFormat";
 import { resolveImageForUpload } from "./social/uploadImage";
+import { pickImage, usePostEditor } from "./social/usePostEditor";
 
 type SocialTab = "feed" | "amigos" | "conversas";
 
 interface Paginated<T> {
   data: T[];
 }
+
+interface FeedPage extends Paginated<SocialPost> {
+  total: number;
+  skip: number;
+  take: number;
+}
+
+type FeedCache = InfiniteData<FeedPage, number>;
+
+const FEED_PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 interface SocialScreenProps {
   navigation: {
@@ -32,43 +42,26 @@ interface SocialScreenProps {
 }
 
 
-async function pickImage(): Promise<string | null> {
-  const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.5 });
-  return res.canceled ? null : res.assets[0].uri;
-}
-
 export default function SocialScreen({ navigation, route }: SocialScreenProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { socket } = useWebSocketChat();
   const bottomReserve = useBottomReserve(true);
 
   const [activeTab, setActiveTab] = useState<SocialTab>("feed");
   const [chatFilter, setChatFilter] = useState<ChatFilter>("ALL");
-  const [createPostModal, setCreatePostModal] = useState(false);
   const [newChatModal, setNewChatModal] = useState(false);
   const [addFriendsModal, setAddFriendsModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
   const [commentText, setCommentText] = useState("");
-  const [postContent, setPostContent] = useState("");
-  const [postImage, setPostImage] = useState<string | null>(null);
-  const [isCreatingPost, setIsCreatingPost] = useState(false);
   const [postToReport, setPostToReport] = useState<SocialPost | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [reportImage, setReportImage] = useState<string | null>(null);
   const [isReporting, setIsReporting] = useState(false);
-  const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
   const [editingComment, setEditingComment] = useState<SocialComment | null>(null);
-
-  useEffect(() => {
-    if (!socket) return;
-    const handleListUpdate = () => queryClient.invalidateQueries({ queryKey: ["chats"] });
-    socket.on("chat:list-update", handleListUpdate);
-    return () => {
-      socket.off("chat:list-update", handleListUpdate);
-    };
-  }, [socket, queryClient]);
+  const postEditor = usePostEditor({ onDeleted: () => setSelectedPost(null) });
+  const canModerate = user?.role === "ADMIN" || user?.role === "MODERATOR";
 
   useEffect(() => {
     const postId = route?.params?.postId;
@@ -81,7 +74,7 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
       })
       .catch((error) => {
         console.error(error);
-        Alert.alert("Aviso", "Este post não está mais disponível ou foi apagado.");
+        showAlert("Aviso", "Este post não está mais disponível ou foi apagado.");
       })
       .finally(() => {
         setTimeout(() => {
@@ -90,10 +83,31 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
       });
   }, [route?.params, navigation]);
 
-  const { data: feedData, refetch: refetchFeed, isLoading: isLoadingFeed } = useQuery<Paginated<SocialPost>>({
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim().replace(/^@/, "")), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const {
+    data: feedData,
+    refetch: refetchFeed,
+    isLoading: isLoadingFeed,
+    fetchNextPage: fetchNextFeedPage,
+    hasNextPage: hasMoreFeed,
+    isFetchingNextPage: isFetchingMoreFeed,
+  } = useInfiniteQuery({
     queryKey: ["posts", "feed"],
-    queryFn: async () => (await api.get("/posts/feed")).data,
+    queryFn: async ({ pageParam }): Promise<FeedPage> =>
+      (await api.get("/posts/feed", { params: { skip: pageParam, take: FEED_PAGE_SIZE } })).data,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage: FeedPage) =>
+      Number(lastPage.skip) + Number(lastPage.take) < lastPage.total ? Number(lastPage.skip) + Number(lastPage.take) : undefined,
   });
+
+  const feedPosts = useMemo(() => {
+    const seen = new Set<string>();
+    return (feedData?.pages.flatMap((page) => page.data) ?? []).filter((post) => !seen.has(post.id) && seen.add(post.id));
+  }, [feedData]);
 
   const { data: chatsData, refetch: refetchChats, isLoading: isLoadingChats } = useQuery<Paginated<SocialChat>>({
     queryKey: ["chats"],
@@ -108,6 +122,13 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
   const { data: availableUsers } = useQuery<Paginated<SocialUser>>({
     queryKey: ["friends", "available"],
     queryFn: async () => (await api.get("/friends/available/users")).data,
+    enabled: addFriendsModal && !debouncedSearch,
+  });
+
+  const { data: searchResults, isFetching: isSearching } = useQuery<Paginated<SocialUser>>({
+    queryKey: ["friends", "search", debouncedSearch],
+    queryFn: async () => (await api.get("/friends/search", { params: { q: debouncedSearch } })).data,
+    enabled: addFriendsModal && debouncedSearch.length > 0,
   });
 
   const { data: pendingRequests } = useQuery<Paginated<unknown> | unknown[]>({
@@ -130,22 +151,14 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
 
   const pendingCount = Array.isArray(pendingRequests) ? pendingRequests.length : (pendingRequests?.data?.length ?? 0);
 
-  const deletePostMutation = useMutation({
-    mutationFn: (postId: string) => api.delete(`/posts/${postId}`),
-    onSuccess: () => {
-      Alert.alert("Sucesso", "Post removido.");
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      setSelectedPost(null);
-    },
-    onError: () => Alert.alert("Erro", "Não foi possível excluir o post."),
-  });
-
   const toggleLikeMutation = useMutation({
     mutationFn: (post: SocialPost) => (post.likedByUser ? api.delete(`/posts/${post.id}/like`) : api.post(`/posts/${post.id}/like`)),
     onMutate: async (post) => {
       await queryClient.cancelQueries({ queryKey: ["posts"] });
-      const previousFeed = queryClient.getQueryData<Paginated<SocialPost>>(["posts", "feed"]);
-      queryClient.setQueryData<Paginated<SocialPost> | undefined>(["posts", "feed"], (old) => toggleLikeInFeed(old, post.id));
+      const previousFeed = queryClient.getQueryData<FeedCache>(["posts", "feed"]);
+      queryClient.setQueryData<FeedCache>(["posts", "feed"], (old) =>
+        old ? { ...old, pages: old.pages.map((page) => ({ ...page, ...toggleLikeInFeed(page, post.id) })) } : old,
+      );
       if (selectedPost?.id === post.id) setSelectedPost((prev) => (prev ? toggleLike(prev) : prev));
       return { previousFeed };
     },
@@ -195,65 +208,21 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
   const sendFriendReqMutation = useMutation({
     mutationFn: (friendId: string) => api.post("/friends/request", { friendId }),
     onSuccess: () => {
-      Alert.alert("Sucesso", "Solicitação enviada!");
+      showAlert("Sucesso", "Solicitação enviada!");
       queryClient.invalidateQueries({ queryKey: ["friends", "available"] });
+      queryClient.invalidateQueries({ queryKey: ["friends", "search"] });
     },
   });
 
-  const handleCreatePost = async () => {
-    if (!postContent.trim() && !postImage) return Alert.alert("Atenção", "Digite algo ou adicione foto.");
-    setIsCreatingPost(true);
-    const finalImage = await resolveImageForUpload(postImage);
-    try {
-      if (editingPost) {
-        await api.patch(`/posts/${editingPost.id}`, { content: postContent, imageUrl: finalImage });
-        Alert.alert("Sucesso", "Post atualizado!");
-      } else {
-        await api.post("/posts", { content: postContent, imageUrl: finalImage });
-        Alert.alert("Sucesso", "Post criado!");
-      }
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      setPostContent("");
-      setPostImage(null);
-      setEditingPost(null);
-      setCreatePostModal(false);
-    } catch {
-      Alert.alert("Erro", "Falha ao salvar post");
-    } finally {
-      setIsCreatingPost(false);
-    }
-  };
-
-  const openNewPost = () => {
-    setEditingPost(null);
-    setPostContent("");
-    setPostImage(null);
-    setCreatePostModal(true);
-  };
-
-  const handleEditInit = (post: SocialPost) => {
-    setEditingPost(post);
-    setPostContent(post.content);
-    setPostImage(post.imageUrl ?? null);
-    setCreatePostModal(true);
-  };
-
-  const confirmDelete = (postId: string) => {
-    Alert.alert("Excluir", "Deseja remover este post permanentemente?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: () => deletePostMutation.mutate(postId) },
-    ]);
-  };
-
   const confirmDeleteComment = (comment: SocialComment) => {
-    Alert.alert("Apagar", "Deseja apagar este comentário?", [
+    showAlert("Apagar", "Deseja apagar este comentário?", [
       { text: "Cancelar", style: "cancel" },
       { text: "Apagar", style: "destructive", onPress: () => deleteCommentMutation.mutate(comment.id) },
     ]);
   };
 
   const handleReportPost = async () => {
-    if (!reportReason.trim()) return Alert.alert("Atenção", "Preencha o motivo da denúncia.");
+    if (!reportReason.trim()) return showAlert("Atenção", "Preencha o motivo da denúncia.");
     if (!postToReport) return;
     setIsReporting(true);
     const finalImage = await resolveImageForUpload(reportImage);
@@ -264,12 +233,12 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
         reason: reportReason,
         imageUrl: finalImage,
       });
-      Alert.alert("Sucesso", "A denúncia foi enviada para análise.");
+      showAlert("Sucesso", "A denúncia foi enviada para análise.");
       setReportReason("");
       setReportImage(null);
       setPostToReport(null);
     } catch {
-      Alert.alert("Erro", "Erro ao denunciar.");
+      showAlert("Erro", "Erro ao denunciar.");
     } finally {
       setIsReporting(false);
     }
@@ -289,7 +258,7 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
 
   const headerAction =
     activeTab === "feed" ? (
-      <IconButton icon={Plus} tone="yellow" accessibilityLabel="Novo post" onPress={openNewPost} />
+      <IconButton icon={Plus} tone="yellow" accessibilityLabel="Novo post" onPress={postEditor.startNew} />
     ) : activeTab === "amigos" ? (
       <IconButton icon={UserPlus} tone="yellow" accessibilityLabel="Adicionar amigos" onPress={() => setAddFriendsModal(true)} />
     ) : (
@@ -306,16 +275,21 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
       <View style={{ flex: 1 }}>
         {activeTab === "feed" ? (
           <FeedTab
-            posts={feedData?.data}
+            posts={feedPosts}
             loading={isLoadingFeed}
             currentUser={currentUser}
             bottomReserve={bottomReserve}
             onRefresh={refetchFeed}
-            onCompose={openNewPost}
+            onEndReached={() => {
+              if (hasMoreFeed && !isFetchingMoreFeed) fetchNextFeedPage();
+            }}
+            loadingMore={isFetchingMoreFeed}
+            onCompose={postEditor.startNew}
             onOpenPost={setSelectedPost}
             onLike={(post) => toggleLikeMutation.mutate(post)}
-            onEdit={handleEditInit}
-            onDelete={(post) => confirmDelete(post.id)}
+            canModerate={canModerate}
+            onEdit={postEditor.startEdit}
+            onDelete={(post) => postEditor.confirmDelete(post.id)}
             onReport={setPostToReport}
             onOpenProfile={openProfile}
           />
@@ -351,23 +325,7 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
         )}
       </View>
 
-      <PostEditorModal
-        visible={createPostModal}
-        editing={editingPost !== null}
-        content={postContent}
-        image={postImage}
-        saving={isCreatingPost}
-        onChangeContent={setPostContent}
-        onPickImage={async () => {
-          const uri = await pickImage();
-          if (uri) setPostImage(uri);
-        }}
-        onSubmit={handleCreatePost}
-        onClose={() => {
-          setCreatePostModal(false);
-          setEditingPost(null);
-        }}
-      />
+      <PostEditorModal {...postEditor.editorProps} />
 
       <PostDetailModal
         post={selectedPost}
@@ -391,9 +349,10 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
         onEditPost={() => {
           const post = selectedPost;
           setSelectedPost(null);
-          if (post) handleEditInit(post);
+          if (post) postEditor.startEdit(post);
         }}
-        onDeletePost={() => selectedPost && confirmDelete(selectedPost.id)}
+        onDeletePost={() => selectedPost && postEditor.confirmDelete(selectedPost.id)}
+        canModerate={canModerate}
         onOpenProfile={openProfile}
         onClose={() => setSelectedPost(null)}
       />
@@ -426,9 +385,14 @@ export default function SocialScreen({ navigation, route }: SocialScreenProps) {
       <AddFriendsSheet
         visible={addFriendsModal}
         query={searchQuery}
-        users={filterAvailableUsers(availableUsers?.data, searchQuery)}
+        users={(debouncedSearch ? searchResults?.data : availableUsers?.data) ?? []}
+        searching={isSearching}
         onChangeQuery={setSearchQuery}
         onAdd={(candidate) => sendFriendReqMutation.mutate(candidate.id)}
+        onOpenProfile={(candidate) => {
+          setAddFriendsModal(false);
+          navigation.navigate("PlayerProfile", { userId: candidate.id });
+        }}
         onClose={() => setAddFriendsModal(false)}
       />
     </Screen>

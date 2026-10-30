@@ -1,30 +1,53 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { RefreshControl, SectionList, View } from "react-native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
-import { Plus } from "lucide-react-native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search } from "lucide-react-native";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { Celebration, EmptyState, ErrorState, Fab, LoadingState, Screen, ScreenHeader, useBottomReserve } from "../components/ui";
+import {
+  Celebration,
+  EmptyState,
+  ErrorState,
+  Fab,
+  Input,
+  LoadingState,
+  MipoText,
+  Screen,
+  ScreenHeader,
+  SegmentedControl,
+  formatDateLong,
+  useBottomReserve,
+} from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
 import { durations } from "../motion/tokens";
+import { useTheme } from "../theme/ThemeProvider";
 import { EventoDetail } from "../types";
 import { EventoCard } from "./evento/EventoCard";
 import { EventoDetailSheet } from "./evento/EventoDetailSheet";
-import { eventoParticipation } from "./evento/eventoState";
+import { EventoPeriod, eventoParticipation, filterEventos, groupEventosByDay } from "./evento/eventoState";
 import { useEventoActions } from "./evento/useEventoActions";
 
 interface EventsListScreenProps {
   navigation: Pick<NavigationProp<ParamListBase>, "navigate" | "goBack" | "canGoBack">;
+  route?: { params?: { eventId?: string } };
 }
 
-export default function EventsListScreen({ navigation }: EventsListScreenProps) {
+const periodOptions: { value: EventoPeriod; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "today", label: "Hoje" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mês" },
+];
+
+export default function EventsListScreen({ navigation, route }: EventsListScreenProps) {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const queryClient = useQueryClient();
   const bottomReserve = useBottomReserve(false);
-  const [events, setEvents] = useState<EventoDetail[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [period, setPeriod] = useState<EventoPeriod>("all");
+  const [search, setSearch] = useState("");
   const [celebratedTitle, setCelebratedTitle] = useState<string | null>(null);
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -32,32 +55,28 @@ export default function EventsListScreen({ navigation }: EventsListScreenProps) 
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
   }, []);
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      const response = await api.get<EventoDetail[]>("/events");
-      const sortedEvents = [...response.data].sort(
-        (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime(),
-      );
-      setEvents(sortedEvents);
-      setFailed(false);
-    } catch (error) {
-      console.log("Erro ao carregar eventos:", error);
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const routeEventId = route?.params?.eventId;
+  useEffect(() => {
+    if (routeEventId) setSelectedId(routeEventId);
+  }, [routeEventId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchEvents();
-    }, [fetchEvents]),
+  const eventsQuery = useQuery<EventoDetail[]>({
+    queryKey: ["events"],
+    queryFn: async () => (await api.get<EventoDetail[]>("/events")).data,
+  });
+  const events = eventsQuery.data ?? [];
+
+  const sections = useMemo(
+    () => groupEventosByDay(filterEventos(events, period, search)).map((group) => ({ title: formatDateLong(group.day), data: group.eventos })),
+    [events, period, search],
   );
+
+  const refreshEvents = () => queryClient.invalidateQueries({ queryKey: ["events"] });
 
   const selectedEvento = events.find((evento) => evento.id === selectedId) ?? null;
   const participation = eventoParticipation(selectedEvento, user?.id);
   const { toggleParticipation, checkIn, toggling, checkingIn } = useEventoActions(selectedEvento, {
-    onChanged: fetchEvents,
+    onChanged: refreshEvents,
     onCheckedIn: () => {
       const title = selectedEvento?.title ?? "";
       setSelectedId(null);
@@ -80,24 +99,34 @@ export default function EventsListScreen({ navigation }: EventsListScreenProps) 
   return (
     <Screen>
       <ScreenHeader title="Eventos" onBack={() => navigation.goBack()} />
-      {loading ? (
+      <Input icon={Search} placeholder="Buscar evento ou jogo" value={search} onChangeText={setSearch} accessibilityLabel="Buscar evento ou jogo" />
+      <View style={{ marginTop: 10 }}>
+        <SegmentedControl<EventoPeriod> options={periodOptions} value={period} onChange={setPeriod} />
+      </View>
+      {eventsQuery.isLoading ? (
         <LoadingState />
-      ) : failed && events.length === 0 ? (
-        <ErrorState
-          onRetry={() => {
-            setLoading(true);
-            fetchEvents();
-          }}
-        />
+      ) : eventsQuery.isError && events.length === 0 ? (
+        <ErrorState onRetry={() => eventsQuery.refetch()} />
       ) : (
-        <FlatList
-          data={events}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item.id}
           style={{ marginHorizontal: -14 }}
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve + 80, gap: 12 }}
+          stickySectionHeadersEnabled={false}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={eventsQuery.isRefetching} onRefresh={refreshEvents} tintColor={colors.pink} />}
+          renderSectionHeader={({ section }) => (
+            <MipoText variant="label" style={{ marginTop: 8 }}>
+              {section.title}
+            </MipoText>
+          )}
           ListEmptyComponent={
-            <EmptyState character="dado3" title="Nenhum evento por enquanto" message="Fica de olho, sempre tem jogatina vindo." />
+            <EmptyState
+              character="dado3"
+              title={search || period !== "all" ? "Nada encontrado" : "Nenhum evento por enquanto"}
+              message={search || period !== "all" ? "Tenta outro filtro ou outra busca." : "Fica de olho, sempre tem jogatina vindo."}
+            />
           }
           renderItem={({ item, index }) => (
             <StaggerIn index={index}>

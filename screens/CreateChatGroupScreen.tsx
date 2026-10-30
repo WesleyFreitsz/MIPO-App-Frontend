@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Alert, Image, Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -18,9 +18,11 @@ import {
   Screen,
   ScreenHeader,
   avatarTone,
+  showAlert,
 } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
 import { stroke } from "../theme/tokens";
+import { uploadImageAsync } from "./social/uploadImage";
 
 interface Friend {
   id: string;
@@ -55,27 +57,14 @@ export default function CreateChatGroupScreen({ navigation }: CreateChatGroupScr
     setSelectedFriends((prev) => (prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]));
   };
 
-  const uploadImageAsync = async (uri: string) => {
-    try {
-      const formData = new FormData();
-      const filename = uri.split("/").pop() || `photo-${Date.now()}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      formData.append("file", { uri, name: filename, type: match ? `image/${match[1]}` : "image/jpeg" } as unknown as Blob);
-      const res = await api.post("/uploads/chat-content", formData, { headers: { "Content-Type": "multipart/form-data" } });
-      return res.data.url;
-    } catch {
-      return null;
-    }
-  };
-
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
     if (!res.canceled) setGroupImage(res.assets[0].uri);
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim()) return Alert.alert("Erro", "O nome do grupo é obrigatório");
-    if (selectedFriends.length === 0) return Alert.alert("Erro", "Selecione pelo menos um amigo");
+    if (!groupName.trim()) return showAlert("Erro", "O nome do grupo é obrigatório");
+    if (selectedFriends.length === 0) return showAlert("Erro", "Selecione pelo menos um amigo");
 
     setIsCreating(true);
     let finalImageUrl = null;
@@ -84,7 +73,7 @@ export default function CreateChatGroupScreen({ navigation }: CreateChatGroupScr
     try {
       const chatResponse = await api.post("/chats/group", { name: groupName, description: groupDescription || null, imageUrl: finalImageUrl });
       await api.post(`/chats/${chatResponse.data.id}/members`, { memberIds: selectedFriends });
-      Alert.alert("Sucesso", "Grupo criado com sucesso!", [
+      showAlert("Sucesso", "Grupo criado com sucesso!", [
         {
           text: "OK",
           onPress: () =>
@@ -92,7 +81,7 @@ export default function CreateChatGroupScreen({ navigation }: CreateChatGroupScr
         },
       ]);
     } catch {
-      Alert.alert("Erro", "Erro ao criar grupo");
+      showAlert("Erro", "Erro ao criar grupo");
     } finally {
       setIsCreating(false);
     }

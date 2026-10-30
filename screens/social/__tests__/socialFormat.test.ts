@@ -1,4 +1,4 @@
-import { chatDisplay, filterAvailableUsers, filterChats, formatChatTime, relativeTime, toggleLikeInFeed } from "../socialFormat";
+import { chatDisplay, filterChats, formatChatTime, relativeTime, toggleLikeInFeed } from "../socialFormat";
 
 describe("chatDisplay", () => {
   const me = "ana";
@@ -51,27 +51,6 @@ describe("filterChats", () => {
 
   test("sem dados devolve lista vazia", () => {
     expect(filterChats(undefined, "ALL")).toEqual([]);
-  });
-});
-
-describe("filterAvailableUsers", () => {
-  const users = [
-    { id: "1", name: "Ana Souza", nickname: "aninha" },
-    { id: "2", name: "Bruno", nickname: null },
-    { id: "3", name: "Carla", nickname: "CARLINHA" },
-  ];
-
-  test("busca por nome ou apelido, sem diferenciar maiúsculas", () => {
-    expect(filterAvailableUsers(users, "carl").map((u) => u.id)).toEqual(["3"]);
-    expect(filterAvailableUsers(users, "SOUZA").map((u) => u.id)).toEqual(["1"]);
-  });
-
-  test("busca vazia devolve todos", () => {
-    expect(filterAvailableUsers(users, "")).toHaveLength(3);
-  });
-
-  test("ignora @ digitado na busca", () => {
-    expect(filterAvailableUsers(users, "@aninha").map((u) => u.id)).toEqual(["1"]);
   });
 });
 

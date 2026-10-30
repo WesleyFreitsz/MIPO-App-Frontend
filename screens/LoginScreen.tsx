@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Calendar, Eye, EyeOff, Lock, Mail, User } from "lucide-react-native";
+import { Eye, EyeOff, Lock, Mail, User } from "lucide-react-native";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
-import { BackButton, Button, Character, CharacterName, CodeInput, FieldLabel, Input, MipoText } from "../components/ui";
+import { BirthDateField } from "../components/BirthDateField";
+import { LEGAL_URLS, MIN_AGE, ageOn, legalVersionQuery, openLegalPage, toIsoDate } from "../services/legal";
+import { BackButton, Button, Character, CharacterName, Checkbox, CodeInput, FieldLabel, Input, MipoText, showAlert } from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
 import { useTheme } from "../theme/ThemeProvider";
 import { fontFamily } from "../theme/tokens";
@@ -45,22 +48,39 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [age, setAge] = useState("");
+  const [birthDate, setBirthDate] = useState<Date | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const legalVersion = useQuery({ ...legalVersionQuery, enabled: mode === "register" });
   const [recoveryCode, setRecoveryCode] = useState("");
 
   const handleAuth = async () => {
     if (mode === "register" && email !== confirmEmail) {
-      return Alert.alert("Erro", "Os e-mails digitados não são iguais.");
+      return showAlert("Erro", "Os e-mails digitados não são iguais.");
+    }
+    if (mode === "register" && (!birthDate || ageOn(birthDate) < MIN_AGE)) {
+      return showAlert("Atenção", `O Mipo é permitido apenas para maiores de ${MIN_AGE} anos.`);
+    }
+    if (mode === "register" && !acceptedTerms) {
+      return showAlert("Atenção", "Para criar a conta, aceite os termos de uso e a política de privacidade.");
+    }
+    if (mode === "register" && !legalVersion.data) {
+      return showAlert("Erro", "Não foi possível carregar os termos. Verifique sua conexão.");
     }
     setIsLoading(true);
     try {
       if (mode === "login") {
         await signIn({ login: email, password });
       } else if (mode === "register") {
-        await signUp({ name, login: email, password, age });
+        await signUp({
+          name,
+          login: email,
+          password,
+          birthDate: toIsoDate(birthDate as Date),
+          termsVersion: (legalVersion.data as { version: string }).version,
+        });
       } else if (mode === "forgot") {
         await api.post("/auth/forgot-password", { email });
-        Alert.alert("Sucesso", "Verifique seu e-mail para obter o código.");
+        showAlert("Sucesso", "Verifique seu e-mail para obter o código.");
         setMode("reset");
       } else if (mode === "reset") {
         await api.post("/auth/reset-password", {
@@ -68,12 +88,12 @@ export default function LoginScreen() {
           code: recoveryCode,
           newPassword: password,
         });
-        Alert.alert("Sucesso", "Senha alterada! Agora faça login.");
+        showAlert("Sucesso", "Senha alterada! Agora faça login.");
         setMode("login");
       }
     } catch (error: unknown) {
       const response = (error as { response?: { data?: { message?: string } } }).response;
-      Alert.alert("Erro", response?.data?.message || "Erro na operação.");
+      showAlert("Erro", response?.data?.message || "Erro na operação.");
     } finally {
       setIsLoading(false);
     }
@@ -156,8 +176,11 @@ export default function LoginScreen() {
             <>
               <FieldLabel>Nome completo</FieldLabel>
               <Input icon={User} placeholder="Seu nome" value={name} onChangeText={setName} autoComplete="name" />
-              <FieldLabel>Idade</FieldLabel>
-              <Input icon={Calendar} placeholder="Sua idade" value={age} onChangeText={setAge} keyboardType="numeric" />
+              <FieldLabel>Data de nascimento</FieldLabel>
+              <BirthDateField value={birthDate} onChange={setBirthDate} />
+              <MipoText variant="caption" style={{ marginTop: 4 }}>
+                {`Uso permitido apenas para maiores de ${MIN_AGE} anos.`}
+              </MipoText>
             </>
           ) : null}
 
@@ -199,6 +222,27 @@ export default function LoginScreen() {
                 />
                 <View style={{ position: "absolute", right: 12, top: 0, bottom: 0, justifyContent: "center" }}>{passwordToggle}</View>
               </View>
+            </View>
+          ) : null}
+
+          {mode === "register" ? (
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 14 }}>
+              <Checkbox checked={acceptedTerms} onChange={setAcceptedTerms} accessibilityLabel="Aceito os termos de uso e a política de privacidade" />
+              <MipoText variant="caption" style={{ flex: 1 }}>
+                {"Li e aceito os "}
+                <MipoText variant="caption" style={{ textDecorationLine: "underline" }} onPress={() => openLegalPage(LEGAL_URLS.terms)}>
+                  Termos de uso
+                </MipoText>
+                {", as "}
+                <MipoText variant="caption" style={{ textDecorationLine: "underline" }} onPress={() => openLegalPage(LEGAL_URLS.community)}>
+                  Diretrizes da comunidade
+                </MipoText>
+                {" e a "}
+                <MipoText variant="caption" style={{ textDecorationLine: "underline" }} onPress={() => openLegalPage(LEGAL_URLS.privacy)}>
+                  Política de privacidade
+                </MipoText>
+                .
+              </MipoText>
             </View>
           ) : null}
 

@@ -3,12 +3,16 @@ import { FlatList, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
-import { Search, Users } from "lucide-react-native";
+import { Bookmark, Heart, Search, Trophy, Users } from "lucide-react-native";
 import { api } from "../services/api";
-import { Chip, EmptyState, ErrorState, GameTile, Input, LoadingState, Screen, ScreenHeader, useBottomReserve } from "../components/ui";
+import { Chip, EmptyState, ErrorState, GameTile, IconButton, Input, LoadingState, Screen, ScreenHeader, useBottomReserve } from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
 import { Jogo } from "../types";
 import { categoriesOf, jogoTileTones, playersText } from "./jogo/jogoFormat";
+import { GameUserMark } from "./jogo/monthlyGameTypes";
+import { RecommendedGamesRow } from "./jogo/RecommendedGamesRow";
+
+type MarkFilter = "favorites" | "wantsToPlay" | null;
 
 const ALL = "Todos";
 
@@ -18,6 +22,7 @@ export default function GamesListScreen() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>(ALL);
   const [playersFilter, setPlayersFilter] = useState("");
+  const [markFilter, setMarkFilter] = useState<MarkFilter>(null);
 
   const { data: games = [], isLoading, isError, refetch } = useQuery<Jogo[]>({
     queryKey: ["games", search, selectedCategory, playersFilter],
@@ -36,6 +41,21 @@ export default function GamesListScreen() {
     queryFn: async () => (await api.get("/games")).data,
   });
 
+  const { data: marks = [] } = useQuery<GameUserMark[]>({
+    queryKey: ["games", "myMarks"],
+    queryFn: async () => (await api.get("/games/me/marks")).data,
+  });
+
+  const visibleGames = useMemo(() => {
+    if (!markFilter) return games;
+    const markedIds = new Set(marks.filter((mark) => (markFilter === "favorites" ? mark.isFavorite : mark.wantsToPlay)).map((mark) => mark.gameId));
+    return games.filter((game) => markedIds.has(game.id));
+  }, [games, marks, markFilter]);
+
+  const showRecommendations = !search && !playersFilter && !markFilter && selectedCategory === ALL;
+
+  const toggleMarkFilter = (filter: Exclude<MarkFilter, null>) => setMarkFilter((current) => (current === filter ? null : filter));
+
   const dynamicCategories = useMemo(
     () => [ALL, ...Array.from(new Set(allGamesForCategories.flatMap((game) => categoriesOf(game.category))))],
     [allGamesForCategories],
@@ -43,7 +63,12 @@ export default function GamesListScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Jogos" subtitle="Descubra o que tem no acervo" onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title="Jogos"
+        subtitle="Descubra o que tem no acervo"
+        onBack={() => navigation.goBack()}
+        right={<IconButton icon={Trophy} tone="yellow" accessibilityLabel="Jogos do mês" onPress={() => navigation.navigate("MonthlyGames")} />}
+      />
 
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Input icon={Search} placeholder="Buscar no acervo" value={search} onChangeText={setSearch} containerStyle={{ flex: 1 }} />
@@ -61,12 +86,15 @@ export default function GamesListScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ marginHorizontal: -14, flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 12, gap: 6 }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 12, gap: 8, alignItems: "center" }}
       >
+        <Chip label="Favoritos" icon={Heart} size="md" tone={markFilter === "favorites" ? "pink" : "neutral"} selected={markFilter === "favorites"} onPress={() => toggleMarkFilter("favorites")} />
+        <Chip label="Quero jogar" icon={Bookmark} size="md" tone={markFilter === "wantsToPlay" ? "teal" : "neutral"} selected={markFilter === "wantsToPlay"} onPress={() => toggleMarkFilter("wantsToPlay")} />
         {dynamicCategories.map((category) => (
           <Chip
             key={category}
             label={category}
+            size="md"
             tone={selectedCategory === category ? "active" : "neutral"}
             selected={selectedCategory === category}
             onPress={() => setSelectedCategory(category)}
@@ -80,7 +108,7 @@ export default function GamesListScreen() {
         <ErrorState onRetry={() => refetch()} />
       ) : (
         <FlatList
-          data={games}
+          data={visibleGames}
           keyExtractor={(item) => item.id}
           numColumns={2}
           style={{ marginHorizontal: -14 }}
@@ -88,6 +116,7 @@ export default function GamesListScreen() {
           contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve, gap: 16 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={showRecommendations ? <RecommendedGamesRow /> : undefined}
           ListEmptyComponent={<EmptyState character="peao5" title="Nenhum jogo encontrado" message="Tenta outra busca ou outra categoria." />}
           renderItem={({ item, index }) => (
             <StaggerIn index={index} style={{ flex: 1 }}>

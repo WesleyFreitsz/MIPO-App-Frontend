@@ -7,18 +7,53 @@ export interface ChatUser {
   avatarUrl?: string | null;
 }
 
+export interface ChatReaction {
+  userId: string;
+  emoji: string;
+}
+
+export interface ChatReplyPreview {
+  id: string;
+  userId: string;
+  content: string;
+  imageUrl?: string | null;
+  isDeleted?: boolean;
+  user?: ChatUser;
+}
+
+export type ChatMessageStatus = "sending" | "failed";
+
 export interface ChatMessageItem {
   id: string;
   chatId: string;
   userId: string;
   content: string;
   createdAt: string;
+  imageUrl?: string | null;
   isRead?: boolean;
   isDeleted?: boolean;
   isEdited?: boolean;
   user?: ChatUser;
   member?: { customColor?: string | null };
+  replyToId?: string | null;
+  replyTo?: ChatReplyPreview | null;
+  reactions?: ChatReaction[];
+  clientId?: string;
+  status?: ChatMessageStatus;
 }
+
+export interface MessagesPage {
+  data: ChatMessageItem[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+export interface MessagesCache {
+  pages: MessagesPage[];
+  pageParams: (string | null)[];
+}
+
+export const messagesQueryKey = (chatId: string) => ["chat", chatId, "messages"] as const;
 
 export interface ChatMemberItem {
   id: string;
@@ -27,6 +62,7 @@ export interface ChatMemberItem {
   user?: ChatUser;
   backgroundTheme?: string | null;
   customColor?: string | null;
+  lastSeenAt?: string | null;
 }
 
 export interface ChatDetails {
@@ -60,4 +96,11 @@ export function formatMessageTime(iso: string): string {
 
 export function displayLabel(user: ChatUser | undefined): string {
   return user?.nickname || user?.name || "";
+}
+
+export function formatLastSeen(iso: string): string {
+  const date = new Date(iso);
+  const isToday = date.toDateString() === new Date().toDateString();
+  if (isToday) return `visto por último às ${formatMessageTime(iso)}`;
+  return `visto por último em ${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
 }

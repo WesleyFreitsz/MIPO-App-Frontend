@@ -14,6 +14,7 @@ export interface ChipProps {
   icon?: LucideIcon;
   onPress?: () => void;
   selected?: boolean;
+  size?: "sm" | "md";
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
@@ -25,16 +26,18 @@ function chipColors(tone: ChipTone, colors: Palette) {
   return { background: colors[tone], foreground: foregroundOn(tone, colors) };
 }
 
-export function Chip({ label, tone = "neutral", icon: Icon, onPress, selected, style, testID }: ChipProps) {
+export function Chip({ label, tone = "neutral", icon: Icon, onPress, selected, size = "sm", style, testID }: ChipProps) {
   const { colors } = useTheme();
   const { background, foreground } = chipColors(tone, colors);
+  const medium = size === "md";
   const chipStyle: ViewStyle = {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    flexShrink: 0,
+    gap: medium ? 6 : 4,
+    paddingHorizontal: medium ? 14 : 10,
+    paddingVertical: medium ? 7 : 4,
     borderRadius: radius.chip,
     borderWidth: stroke.thin,
     borderColor: tone === "dark" ? colors.tab : colors.line,
@@ -42,8 +45,8 @@ export function Chip({ label, tone = "neutral", icon: Icon, onPress, selected, s
   };
   const content = (
     <>
-      {Icon ? <Icon color={foreground} size={12} strokeWidth={2.6} /> : null}
-      <MipoText variant="micro" numberOfLines={1} style={{ color: foreground, fontSize: 11 }}>
+      {Icon ? <Icon color={foreground} size={medium ? 14 : 12} strokeWidth={2.6} /> : null}
+      <MipoText variant="micro" numberOfLines={1} style={{ color: foreground, fontSize: medium ? 13 : 11, lineHeight: medium ? 17 : 14, flexShrink: 0 }}>
         {label}
       </MipoText>
     </>

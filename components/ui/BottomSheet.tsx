@@ -1,6 +1,6 @@
 import React from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleProp, View, ViewStyle } from "react-native";
-import Animated, { FadeIn, SlideInDown } from "react-native-reanimated";
+import Animated, { Easing, FadeIn, SlideInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "../../motion/reducedMotion";
 import { useTheme } from "../../theme/ThemeProvider";
@@ -31,7 +31,7 @@ export function BottomSheet({ visible, onClose, children, contentStyle }: Bottom
           />
         </Animated.View>
         <Animated.View
-          entering={reducedMotion ? FadeIn.duration(200) : SlideInDown.springify().damping(18)}
+          entering={reducedMotion ? FadeIn.duration(200) : SlideInDown.duration(240).easing(Easing.out(Easing.cubic))}
           style={[
             {
               maxHeight: "92%",

@@ -28,3 +28,4 @@ export * from "./ScreenHeader";
 export * from "./Skeleton";
 export * from "./SectionHeader";
 export * from "./IconButton";
+export * from "./MipoAlert";

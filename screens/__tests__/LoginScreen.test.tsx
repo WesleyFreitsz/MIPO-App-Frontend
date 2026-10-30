@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert } from "react-native";
+import * as MipoAlert from "../../components/ui/MipoAlert";
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import LoginScreen from "../LoginScreen";
 import { renderWithTheme } from "../../test-utils/renderWithTheme";
@@ -17,7 +17,7 @@ const mockedPost = api.post as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  jest.spyOn(MipoAlert, "showAlert").mockImplementation(() => undefined);
 });
 
 async function type(placeholder: string, value: string) {
@@ -52,7 +52,7 @@ test("cadastro com e-mails diferentes avisa e não cria conta", async () => {
   await type("seu@email.com", "ana@exemplo.com");
   await type("Repita seu e-mail", "outra@exemplo.com");
   await fireEvent.press(screen.getByRole("button", { name: "Criar conta" }));
-  expect(Alert.alert).toHaveBeenCalledWith("Erro", "Os e-mails digitados não são iguais.");
+  expect(MipoAlert.showAlert).toHaveBeenCalledWith("Erro", "Os e-mails digitados não são iguais.");
   expect(mockSignUp).not.toHaveBeenCalled();
 });
 
@@ -90,7 +90,7 @@ test("erro da API aparece para a pessoa", async () => {
   mockSignIn.mockRejectedValueOnce({ response: { data: { message: "Senha incorreta" } } });
   await renderWithTheme(<LoginScreen />);
   await fireEvent.press(screen.getByRole("button", { name: "Entrar" }));
-  await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Erro", "Senha incorreta"));
+  await waitFor(() => expect(MipoAlert.showAlert).toHaveBeenCalledWith("Erro", "Senha incorreta"));
 });
 
 test("dá para mostrar e esconder a senha", async () => {

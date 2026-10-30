@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Alert, FlatList, View } from "react-native";
-import { Check, Clock, DollarSign, X } from "lucide-react-native";
+import { FlatList, Image, RefreshControl, View } from "react-native";
+import { Check, X } from "lucide-react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
-import { useFocusEffect } from "@react-navigation/native";
 import {
   Avatar,
   Button,
@@ -10,6 +10,7 @@ import {
   Card,
   Chip,
   EmptyState,
+  ErrorState,
   Input,
   LoadingState,
   MipoText,
@@ -17,8 +18,11 @@ import {
   ScreenHeader,
   SegmentedControl,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
+import { radius, stroke } from "../theme/tokens";
+import { MonthlyGameScore, Page, displayName } from "./jogo/monthlyGameTypes";
 
 interface Event {
   id: string;
@@ -28,106 +32,70 @@ interface Event {
   creator?: { name: string };
 }
 
-interface Reservation {
-  id: string;
-  userId: string;
-  user?: { name: string };
-  date: string;
-  startTime: string;
-  endTime: string;
-  totalPrice: number;
-  status: "pending" | "approved" | "rejected";
-  createdAt: string;
-}
+type ApprovalTab = "events" | "scores";
 
-type ApprovalTab = "events" | "reservations";
+const PENDING_EVENTS_KEY = ["approvals", "events"];
+const PENDING_SCORES_KEY = ["approvals", "scores"];
 
 export default function AdminApprovalsScreen() {
   const { colors } = useTheme();
+  const queryClient = useQueryClient();
   const bottomReserve = useBottomReserve(false);
-  const [approvals, setApprovals] = useState<Event[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ApprovalTab>("events");
 
-  // Modal de Rejeição
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<"event" | "reservation">(
-    "event",
-  );
+  const [selectedType, setSelectedType] = useState<ApprovalTab>("events");
   const [rejectReason, setRejectReason] = useState("");
 
-  // Carrega sempre que a tela ganha foco
-  useFocusEffect(
-    React.useCallback(() => {
-      loadPendingData();
-    }, []),
-  );
+  const eventsQuery = useQuery<Event[]>({
+    queryKey: PENDING_EVENTS_KEY,
+    queryFn: async () => (await api.get("/events/pending")).data,
+  });
 
-  async function loadPendingData() {
-    setLoading(true);
-    try {
-      const [eventsRes, reservationsRes] = await Promise.all([
-        api.get("/events/pending").catch(() => ({ data: [] })),
-        api.get("/rooms/salinha/reservations/pending").catch(() => ({ data: [] })),
-      ]);
+  const scoresQuery = useQuery<Page<MonthlyGameScore>>({
+    queryKey: PENDING_SCORES_KEY,
+    queryFn: async () => (await api.get("/monthly-games/scores/pending", { params: { skip: 0, take: 100 } })).data,
+  });
 
-      setApprovals(eventsRes.data || []);
-      setReservations(reservationsRes.data || []);
-    } catch (error) {
-      console.log("Erro ao carregar pendências", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const handleApproveEvent = async (id: string) => {
-    try {
-      await api.patch(`/events/${id}/approve`);
-      Alert.alert("Sucesso", "Evento aprovado e notificado!");
-      loadPendingData();
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível aprovar.");
-    }
+  const refreshAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["approvals"] });
+    queryClient.invalidateQueries({ queryKey: ["monthlyGames"] });
   };
 
-  const handleApproveReservation = async (id: string) => {
-    try {
-      await api.patch(`/rooms/salinha/reservations/${id}/approve`);
-      Alert.alert("Sucesso", "Reserva aprovada!");
-      loadPendingData();
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível aprovar a reserva.");
-    }
-  };
+  const approveMutation = useMutation({
+    mutationFn: ({ id, type }: { id: string; type: ApprovalTab }) =>
+      api.patch(type === "events" ? `/events/${id}/approve` : `/monthly-games/scores/${id}/approve`),
+    onSuccess: (_, { type }) => {
+      showAlert("Sucesso", type === "events" ? "Evento aprovado e notificado!" : "Partida aprovada!");
+      refreshAll();
+    },
+    onError: () => showAlert("Erro", "Não foi possível aprovar."),
+  });
 
-  const openRejectModal = (id: string, type: "event" | "reservation") => {
+  const rejectMutation = useMutation({
+    mutationFn: () =>
+      api.patch(selectedType === "events" ? `/events/${selectedId}/reject` : `/monthly-games/scores/${selectedId}/reject`, {
+        reason: rejectReason,
+      }),
+    onSuccess: () => {
+      setRejectModalVisible(false);
+      showAlert("Sucesso", "Rejeitado.");
+      refreshAll();
+    },
+    onError: () => showAlert("Erro", "Falha ao rejeitar."),
+  });
+
+  const openRejectModal = (id: string, type: ApprovalTab) => {
     setSelectedId(id);
     setSelectedType(type);
     setRejectReason("");
     setRejectModalVisible(true);
   };
 
-  const confirmReject = async () => {
-    if (!rejectReason) return Alert.alert("Atenção", "Informe o motivo.");
-
-    try {
-      if (selectedType === "event") {
-        await api.patch(`/events/${selectedId}/reject`, {
-          reason: rejectReason,
-        });
-      } else {
-        await api.patch(`/rooms/salinha/reservations/${selectedId}/reject`, {
-          reason: rejectReason,
-        });
-      }
-      setRejectModalVisible(false);
-      Alert.alert("Sucesso", "Rejeitado.");
-      loadPendingData();
-    } catch (error) {
-      Alert.alert("Erro", "Falha ao rejeitar.");
-    }
+  const confirmReject = () => {
+    if (!rejectReason.trim()) return showAlert("Atenção", "Informe o motivo.");
+    rejectMutation.mutate();
   };
 
   const formatDate = (isoString: string) => {
@@ -135,10 +103,18 @@ export default function AdminApprovalsScreen() {
     return `${date.getDate()}/${date.getMonth() + 1} às ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
   };
 
-  const renderActions = (onApprove: () => void, onReject: () => void) => (
+  const renderActions = (id: string, type: ApprovalTab) => (
     <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-      <Button label="Aprovar" icon={Check} variant="lime" size="sm" onPress={onApprove} style={{ flex: 1 }} />
-      <Button label="Recusar" icon={X} variant="ghost" size="sm" onPress={onReject} style={{ flex: 1 }} />
+      <Button
+        label="Aprovar"
+        icon={Check}
+        variant="lime"
+        size="sm"
+        disabled={approveMutation.isPending}
+        onPress={() => approveMutation.mutate({ id, type })}
+        style={{ flex: 1 }}
+      />
+      <Button label="Recusar" icon={X} variant="ghost" size="sm" onPress={() => openRejectModal(id, type)} style={{ flex: 1 }} />
     </View>
   );
 
@@ -161,48 +137,57 @@ export default function AdminApprovalsScreen() {
         <MipoText variant="cardTitle" numberOfLines={2} style={{ marginTop: 10 }}>
           {item.title}
         </MipoText>
-        {renderActions(
-          () => handleApproveEvent(item.id),
-          () => openRejectModal(item.id, "event"),
-        )}
+        {renderActions(item.id, "events")}
       </Card>
     );
   };
 
-  const renderReservationItem = (item: Reservation) => {
-    const userName = item.user?.name ?? "Usuário";
+  const renderScoreItem = (item: MonthlyGameScore) => {
+    const player = item.user;
     return (
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Avatar name={userName} id={item.userId} />
+          {player ? <Avatar name={player.name} id={player.id} uri={player.avatarUrl} /> : null}
           <View style={{ flex: 1, minWidth: 0 }}>
             <MipoText variant="bodyBold" numberOfLines={1}>
-              {userName}
+              {player ? displayName(player) : "Usuário"}
             </MipoText>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Clock size={12} color={colors.muted} strokeWidth={2.4} />
-              <MipoText variant="caption" numberOfLines={1}>
-                {`${item.date} · ${item.startTime} - ${item.endTime}`}
-              </MipoText>
-            </View>
+            <MipoText variant="caption" numberOfLines={1}>
+              {`${item.monthlyGame.game.name} · ${formatDate(item.createdAt)}`}
+            </MipoText>
           </View>
-          <Chip label={`R$ ${item.totalPrice.toFixed(2)}`} tone="yellow" />
+          <Chip label={`${item.score} pts`} tone="yellow" />
         </View>
-        <MipoText variant="cardTitle" numberOfLines={2} style={{ marginTop: 10 }}>
-          Reserva da Salinha
-        </MipoText>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
-          <DollarSign size={14} color={colors.muted} strokeWidth={2.4} />
-          <MipoText variant="caption" style={{ flex: 1 }}>
-            Aguardando comprovante no Instagram @mipojogos
+        {item.note ? (
+          <MipoText variant="body" color="muted" style={{ marginTop: 10 }}>
+            {item.note}
           </MipoText>
-        </View>
-        {renderActions(
-          () => handleApproveReservation(item.id),
-          () => openRejectModal(item.id, "reservation"),
-        )}
+        ) : null}
+        {item.proofImageUrl ? (
+          <Image
+            source={{ uri: item.proofImageUrl }}
+            accessibilityLabel="Foto da partida"
+            style={{ width: "100%", aspectRatio: 4 / 3, marginTop: 10, borderRadius: radius.icon, borderWidth: stroke.thin, borderColor: colors.line }}
+            resizeMode="cover"
+          />
+        ) : null}
+        {renderActions(item.id, "scores")}
       </Card>
     );
+  };
+
+  const events = eventsQuery.data ?? [];
+  const scores = scoresQuery.data?.data ?? [];
+  const activeQuery = activeTab === "events" ? eventsQuery : scoresQuery;
+
+  const listProps = {
+    style: { marginHorizontal: -14 },
+    contentContainerStyle: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 },
+    showsVerticalScrollIndicator: false,
+    refreshControl: <RefreshControl refreshing={activeQuery.isRefetching} onRefresh={() => {
+          activeQuery.refetch();
+        }} tintColor={colors.pink} />,
+    ListEmptyComponent: <EmptyState character="peao2" title="Nada esperando aprovação" />,
   };
 
   return (
@@ -210,54 +195,36 @@ export default function AdminApprovalsScreen() {
       <ScreenHeader title="Aprovações" />
       <SegmentedControl<ApprovalTab>
         options={[
-          { value: "events", label: `Eventos (${approvals.length})` },
-          { value: "reservations", label: `Salinhas (${reservations.length})` },
+          { value: "events", label: `Eventos (${events.length})` },
+          { value: "scores", label: `Partidas (${scoresQuery.data?.total ?? 0})` },
         ]}
         value={activeTab}
         onChange={setActiveTab}
       />
 
-      {loading ? (
+      {activeQuery.isLoading ? (
         <LoadingState />
+      ) : activeQuery.isError ? (
+        <ErrorState onRetry={() => activeQuery.refetch()} />
       ) : activeTab === "events" ? (
-        <FlatList
-          data={approvals}
-          keyExtractor={(item) => item.id}
-          style={{ marginHorizontal: -14 }}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 }}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<EmptyState character="peao2" title="Nada esperando aprovação" />}
-          renderItem={({ item }) => renderEventItem(item)}
-        />
+        <FlatList {...listProps} data={events} keyExtractor={(item) => item.id} renderItem={({ item }) => renderEventItem(item)} />
       ) : (
-        <FlatList
-          data={reservations}
-          keyExtractor={(item) => item.id}
-          style={{ marginHorizontal: -14 }}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 }}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<EmptyState character="peao2" title="Nada esperando aprovação" />}
-          renderItem={({ item }) => renderReservationItem(item)}
-        />
+        <FlatList {...listProps} data={scores} keyExtractor={(item) => item.id} renderItem={({ item }) => renderScoreItem(item)} />
       )}
 
-      {/* Modal para Motivo da Reprovação */}
       <BottomSheet visible={rejectModalVisible} onClose={() => setRejectModalVisible(false)}>
-        <MipoText variant="section">
-          {selectedType === "event"
-            ? "Motivo da Reprovação"
-            : "Motivo da Rejeição"}
-        </MipoText>
+        <MipoText variant="section">{selectedType === "events" ? "Motivo da Reprovação" : "Motivo da Recusa"}</MipoText>
         <Input
-          placeholder="Ex: Data indisponível..."
+          placeholder={selectedType === "events" ? "Ex: Data indisponível..." : "Ex: Foto não mostra o placar"}
           value={rejectReason}
           onChangeText={setRejectReason}
           multiline
+          maxLength={300}
           containerStyle={{ marginTop: 12, minHeight: 90 }}
         />
         <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
           <Button label="Cancelar" variant="ghost" onPress={() => setRejectModalVisible(false)} style={{ flex: 1 }} />
-          <Button label="Confirmar Rejeição" variant="red" onPress={confirmReject} style={{ flex: 1 }} />
+          <Button label="Confirmar Rejeição" variant="red" loading={rejectMutation.isPending} onPress={confirmReject} style={{ flex: 1 }} />
         </View>
       </BottomSheet>
     </Screen>

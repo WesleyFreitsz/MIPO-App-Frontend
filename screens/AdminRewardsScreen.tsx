@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { View, FlatList, Alert } from "react-native";
-import { Plus, Trash2, Package } from "lucide-react-native";
+import { View, FlatList } from "react-native";
+import { Check, Plus, Trash2, Package } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import {
+  Avatar,
   BottomSheet,
   Button,
   Card,
@@ -18,7 +19,9 @@ import {
   MipoText,
   Screen,
   ScreenHeader,
+  SegmentedControl,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
 import { foregroundOn } from "../theme/tokens";
@@ -30,6 +33,17 @@ interface Reward {
   stock: number;
 }
 
+interface Redemption {
+  id: string;
+  rewardTitle: string;
+  price: number;
+  status: "PENDING" | "DELIVERED";
+  createdAt: string;
+  user?: { id: string; name: string; avatarUrl?: string | null };
+}
+
+type RewardsTab = "rewards" | "redemptions";
+
 const REWARD_TONES = ["yellow", "teal", "pink"] as const;
 
 export default function AdminRewardsScreen() {
@@ -40,6 +54,19 @@ export default function AdminRewardsScreen() {
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("");
+  const [activeTab, setActiveTab] = useState<RewardsTab>("rewards");
+
+  const { data: redemptions = [], isLoading: isLoadingRedemptions } = useQuery<Redemption[]>({
+    queryKey: ["rewards", "redemptions", "PENDING"],
+    queryFn: async () => (await api.get("/rewards/redemptions", { params: { status: "PENDING" } })).data,
+    enabled: activeTab === "redemptions",
+  });
+
+  const deliverMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/rewards/redemptions/${id}/deliver`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rewards", "redemptions"] }),
+    onError: () => showAlert("Erro", "Não foi possível marcar como entregue."),
+  });
 
   const { data: rewards = [], isLoading } = useQuery<Reward[]>({
     queryKey: ["rewards"],
@@ -58,7 +85,7 @@ export default function AdminRewardsScreen() {
       setPrice("");
       setStock("");
       setFormVisible(false);
-      Alert.alert("Sucesso", "Recompensa cadastrada!");
+      showAlert("Sucesso", "Recompensa cadastrada!");
     },
   });
 
@@ -71,7 +98,7 @@ export default function AdminRewardsScreen() {
 
   const handleAddReward = () => {
     if (!title.trim() || !price.trim() || !stock.trim()) {
-      Alert.alert("Erro", "Preencha todos os campos da recompensa.");
+      showAlert("Erro", "Preencha todos os campos da recompensa.");
       return;
     }
     createMutation.mutate({
@@ -82,7 +109,7 @@ export default function AdminRewardsScreen() {
   };
 
   const handleDelete = (id: string) => {
-    Alert.alert("Excluir", "Deseja remover esta recompensa?", [
+    showAlert("Excluir", "Deseja remover esta recompensa?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Excluir",
@@ -95,7 +122,50 @@ export default function AdminRewardsScreen() {
   return (
     <Screen>
       <ScreenHeader title="Recompensas" />
-      {isLoading ? (
+      <SegmentedControl<RewardsTab>
+        options={[
+          { value: "rewards", label: "Catálogo" },
+          { value: "redemptions", label: "Resgates pendentes" },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+      {activeTab === "redemptions" ? (
+        isLoadingRedemptions ? (
+          <LoadingState />
+        ) : (
+          <FlatList
+            data={redemptions}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            style={{ marginHorizontal: -14 }}
+            contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve, gap: 12 }}
+            ListEmptyComponent={<EmptyState character="moeda5" title="Nenhum resgate pendente" />}
+            renderItem={({ item }) => (
+              <Card contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Avatar id={item.user?.id ?? item.id} name={item.user?.name ?? "Jogador"} uri={item.user?.avatarUrl} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <MipoText variant="cardTitle" numberOfLines={1}>
+                    {item.rewardTitle}
+                  </MipoText>
+                  <MipoText variant="caption" numberOfLines={1}>
+                    {`${item.user?.name ?? "Jogador"} · ${new Date(item.createdAt).toLocaleDateString("pt-BR")}`}
+                  </MipoText>
+                  <Chip tone="yellow" label={`${item.price} moedas`} />
+                </View>
+                <Button
+                  label="Entregue"
+                  icon={Check}
+                  variant="lime"
+                  size="sm"
+                  loading={deliverMutation.isPending && deliverMutation.variables === item.id}
+                  onPress={() => deliverMutation.mutate(item.id)}
+                />
+              </Card>
+            )}
+          />
+        )
+      ) : isLoading ? (
         <LoadingState />
       ) : (
         <FlatList
@@ -103,7 +173,7 @@ export default function AdminRewardsScreen() {
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           style={{ marginHorizontal: -14 }}
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 4, paddingBottom: bottomReserve + 80, gap: 14 }}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: bottomReserve + 80, gap: 14 }}
           ListEmptyComponent={
             <EmptyState character="moeda5" title="Nenhuma recompensa ativa" message="Toque no + para cadastrar a primeira." />
           }
@@ -131,9 +201,11 @@ export default function AdminRewardsScreen() {
           }}
         />
       )}
-      <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
-        <Fab icon={Plus} accessibilityLabel="Nova recompensa" onPress={() => setFormVisible(true)} />
-      </View>
+      {activeTab === "rewards" ? (
+        <View pointerEvents="box-none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+          <Fab icon={Plus} accessibilityLabel="Nova recompensa" onPress={() => setFormVisible(true)} />
+        </View>
+      ) : null}
 
       <BottomSheet visible={formVisible} onClose={() => setFormVisible(false)}>
         <MipoText variant="screenTitle" style={{ fontSize: 22 }}>

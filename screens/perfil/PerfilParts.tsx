@@ -1,7 +1,7 @@
 import React from "react";
-import { FlatList, Image, Pressable, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MessageCircle } from "lucide-react-native";
+import { Camera, MessageCircle } from "lucide-react-native";
 import { Avatar, BottomSheet, Card, Character, Hero, IconButton, MipoText, Skeleton } from "../../components/ui";
 import { useTheme } from "../../theme/ThemeProvider";
 import { foregroundOn, radius, stroke } from "../../theme/tokens";
@@ -22,10 +22,22 @@ export interface PerfilHeroProps {
   topRight?: React.ReactNode;
   coins?: number;
   onCoinsPress?: () => void;
+  onAvatarPress?: () => void;
+  avatarUploading?: boolean;
   children?: React.ReactNode;
 }
 
-export function PerfilHero({ person, tone, topLeft, topRight, coins, onCoinsPress, children }: PerfilHeroProps) {
+export function PerfilHero({
+  person,
+  tone,
+  topLeft,
+  topRight,
+  coins,
+  onCoinsPress,
+  onAvatarPress,
+  avatarUploading = false,
+  children,
+}: PerfilHeroProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const foreground = foregroundOn(tone, colors);
@@ -36,7 +48,53 @@ export function PerfilHero({ person, tone, topLeft, topRight, coins, onCoinsPres
         <View>{topLeft}</View>
         <View style={{ flexDirection: "row", gap: 8 }}>{topRight}</View>
       </View>
-      <Avatar id={person.id} name={person.name} uri={person.avatarUrl} size="lg" tone="yellow" />
+      {onAvatarPress ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Trocar foto de perfil"
+          accessibilityState={{ busy: avatarUploading }}
+          disabled={avatarUploading}
+          onPress={onAvatarPress}
+        >
+          <Avatar id={person.id} name={person.name} uri={person.avatarUrl} size="lg" tone="yellow" />
+          {avatarUploading ? (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                borderRadius: radius.chip,
+                backgroundColor: colors.overlay,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ActivityIndicator color={colors.onPink} />
+            </View>
+          ) : null}
+          <View
+            style={{
+              position: "absolute",
+              right: -4,
+              bottom: -2,
+              width: 32,
+              height: 32,
+              borderRadius: radius.chip,
+              backgroundColor: colors.yellow,
+              borderWidth: stroke.regular,
+              borderColor: colors.line,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Camera size={16} color={colors.onColor} strokeWidth={2.6} />
+          </View>
+        </Pressable>
+      ) : (
+        <Avatar id={person.id} name={person.name} uri={person.avatarUrl} size="lg" tone="yellow" />
+      )}
       <MipoText variant="screenTitle" style={{ color: foreground, marginTop: 8, textAlign: "center" }}>
         {person.name}
       </MipoText>
@@ -46,7 +104,7 @@ export function PerfilHero({ person, tone, topLeft, topRight, coins, onCoinsPres
       {coins !== undefined ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${coins} moedas`}
+          accessibilityLabel={onCoinsPress ? `${coins} moedas, abrir loja de recompensas` : `${coins} moedas`}
           onPress={onCoinsPress}
           style={{
             flexDirection: "row",

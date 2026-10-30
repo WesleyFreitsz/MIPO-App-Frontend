@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery } from "@tanstack/react-query";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -28,6 +28,8 @@ import { EventoDetailSheet } from "./evento/EventoDetailSheet";
 import { eventoParticipation, upcomingApprovedEventos } from "./evento/eventoState";
 import { categoriesText } from "./jogo/jogoFormat";
 import { useEventoActions } from "./evento/useEventoActions";
+import { MonthlyPeriod } from "./jogo/monthlyGameTypes";
+import { HomeHighlightsCarousel } from "./components/HomeHighlightsCarousel";
 
 interface FeaturedGame {
   id: string;
@@ -49,11 +51,6 @@ export default function HomeScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [eventos, setEventos] = useState<EventoDetail[]>([]);
-  const [nextEventos, setNextEventos] = useState<EventoDetail[]>([]);
-  const [featuredGames, setFeaturedGames] = useState<FeaturedGame[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [celebratedTitle, setCelebratedTitle] = useState<string | null>(null);
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,42 +59,46 @@ export default function HomeScreen() {
     if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permissão Necessária", "Precisamos de acesso à câmera para o check-in.");
-      }
-    })();
-  }, []);
+  const eventsQuery = useQuery<EventoDetail[]>({
+    queryKey: ["events"],
+    queryFn: async () => (await api.get<EventoDetail[]>("/events")).data,
+  });
+  const featuredGamesQuery = useQuery<FeaturedGame[]>({
+    queryKey: ["games", "featured"],
+    queryFn: async () => (await api.get<FeaturedGame[]>("/games", { params: { isFeatured: true } })).data,
+  });
+  const monthlyGamesQuery = useQuery<MonthlyPeriod>({
+    queryKey: ["monthlyGames", "current"],
+    queryFn: async () => (await api.get<MonthlyPeriod>("/monthly-games")).data,
+  });
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      const resEvents = await api.get<EventoDetail[]>("/events");
-      setEventos(resEvents.data);
-      setNextEventos(upcomingApprovedEventos(resEvents.data, new Date(), 3));
-      const resGames = await api.get<FeaturedGame[]>("/games?isFeatured=true");
-      setFeaturedGames(resGames.data);
-      setFailed(false);
-    } catch (error) {
-      console.log("Erro ao buscar dados", error);
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  const refetchEvents = eventsQuery.refetch;
   useFocusEffect(
     useCallback(() => {
-      fetchDashboardData();
-    }, [fetchDashboardData]),
+      refetchEvents();
+    }, [refetchEvents]),
   );
+
+  const eventos = eventsQuery.data ?? [];
+  const nextEventos = upcomingApprovedEventos(eventos, new Date(), 3);
+  const featuredGames = featuredGamesQuery.data ?? [];
+  const monthlyGames = monthlyGamesQuery.data?.games ?? [];
+  const loading = eventsQuery.isLoading || featuredGamesQuery.isLoading;
+  const failed = eventsQuery.isError || featuredGamesQuery.isError;
+  const refreshing = eventsQuery.isRefetching || featuredGamesQuery.isRefetching || monthlyGamesQuery.isRefetching;
+  const refreshAll = () => {
+    eventsQuery.refetch();
+    featuredGamesQuery.refetch();
+    monthlyGamesQuery.refetch();
+  };
 
   const selectedEvento = eventos.find((evento) => evento.id === selectedId) ?? null;
   const participation = eventoParticipation(selectedEvento, user?.id);
 
   const { toggleParticipation, checkIn, toggling, checkingIn } = useEventoActions(selectedEvento, {
-    onChanged: fetchDashboardData,
+    onChanged: () => {
+      eventsQuery.refetch();
+    },
     onCheckedIn: () => {
       const title = selectedEvento?.title ?? "";
       setSelectedId(null);
@@ -117,16 +118,16 @@ export default function HomeScreen() {
     });
   };
 
-  const retry = () => {
-    setLoading(true);
-    fetchDashboardData();
-  };
-
   const [destaque, ...outrosEventos] = nextEventos;
 
   return (
     <>
-      <Screen scroll withTabBar safeTop={false}>
+      <Screen
+        scroll
+        withTabBar
+        safeTop={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={colors.pink} />}
+      >
         <Hero paddingTop={insets.top + 8}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <MipoText
@@ -170,10 +171,12 @@ export default function HomeScreen() {
           </MipoText>
         </Hero>
 
+        <HomeHighlightsCarousel nextEvento={nextEventos[0]} monthlyGames={monthlyGames} />
+
         {loading ? (
           <LoadingState skeletons={2} />
         ) : failed && nextEventos.length === 0 && featuredGames.length === 0 ? (
-          <ErrorState onRetry={retry} />
+          <ErrorState onRetry={refreshAll} />
         ) : (
           <>
             {destaque ? (
@@ -183,6 +186,7 @@ export default function HomeScreen() {
             ) : (
               <EmptyState character="dado3" title="Nenhum evento por enquanto" message="Fica de olho, sempre tem jogatina vindo." />
             )}
+
 
             <StaggerIn index={1}>
               <SectionHeader

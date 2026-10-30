@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Pressable, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { Bell, Home, LucideIcon, ShieldCheck, User, Users } from "lucide-react-native";
+import { Bell, Home, LucideIcon, ShieldCheck, Store, User, Users } from "lucide-react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
 import { CountBadge } from "../components/ui/CountBadge";
 import { MipoText } from "../components/ui/Text";
@@ -16,6 +16,7 @@ const icons: Record<string, LucideIcon> = {
   Início: Home,
   Painel: ShieldCheck,
   Social: Users,
+  "Na loja": Store,
   Notificações: Bell,
   Perfil: User,
 };

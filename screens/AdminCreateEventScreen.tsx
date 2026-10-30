@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,12 +13,15 @@ import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { Button, FieldLabel, Input, MipoText, Screen, ScreenHeader, SegmentedControl } from "../components/ui";
+import { Button, FieldLabel, Input, MipoText, Screen, ScreenHeader, SegmentedControl, showAlert } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
 import { radius, stroke } from "../theme/tokens";
 import { EventoDetail } from "../types";
+import { uploadImageAsync as uploadBanner } from "./social/uploadImage";
+import { isLocalFile } from "../services/uploads";
 
 interface AdminCreateEventScreenProps {
   navigation: Pick<NavigationProp<ParamListBase>, "goBack">;
@@ -33,7 +35,6 @@ interface ApiError {
 
 const localOptions = [
   { value: "SALAO", label: "Salão" },
-  { value: "SALINHA", label: "Salinha" },
   { value: "EXTERNO", label: "Externo" },
   { value: "PERSONALIZADO", label: "Outro" },
 ];
@@ -72,9 +73,9 @@ export default function AdminCreateEventScreen({ navigation, route }: AdminCreat
   const { colors } = useTheme();
   const eventId = route.params?.eventId;
   const isEditing = !!eventId;
-  const isAdmin = user?.role === "ADMIN";
+  const canPublish = user?.role === "ADMIN" || user?.role === "MODERATOR";
+  const queryClient = useQueryClient();
 
-  const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [localType, setLocalType] = useState("SALAO");
@@ -84,35 +85,34 @@ export default function AdminCreateEventScreen({ navigation, route }: AdminCreat
   const [showPicker, setShowPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<"date" | "time">("date");
 
+  const eventsQuery = useQuery<EventoDetail[]>({
+    queryKey: ["events"],
+    queryFn: async () => (await api.get<EventoDetail[]>("/events")).data,
+    enabled: isEditing,
+  });
+  const formFilled = useRef(false);
+
   useEffect(() => {
-    if (isEditing) {
-      loadEventData();
+    if (!isEditing || formFilled.current) return;
+    if (eventsQuery.isError) {
+      showAlert("Erro", "Falha ao carregar dados do evento.");
+      return;
     }
-  }, [eventId]);
-
-  const loadEventData = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get<EventoDetail[]>(`/events`);
-      const event = response.data.find((e) => e.id === eventId);
-
-      if (event) {
-        setTitle(event.title);
-        setDescription(event.description ?? "");
-        setLocalType(event.space);
-        setCustomLocation(event.customLocation || "");
-        setBanner(event.bannerUrl ?? null);
-        setEventDate(new Date(event.dateTime));
-      } else {
-        Alert.alert("Erro", "Evento não encontrado.");
-        navigation.goBack();
-      }
-    } catch (e) {
-      Alert.alert("Erro", "Falha ao carregar dados do evento.");
-    } finally {
-      setLoading(false);
+    if (!eventsQuery.data) return;
+    formFilled.current = true;
+    const event = eventsQuery.data.find((e) => e.id === eventId);
+    if (!event) {
+      showAlert("Erro", "Evento não encontrado.");
+      navigation.goBack();
+      return;
     }
-  };
+    setTitle(event.title);
+    setDescription(event.description ?? "");
+    setLocalType(event.space === "SALINHA" ? "SALAO" : event.space);
+    setCustomLocation(event.customLocation || "");
+    setBanner(event.bannerUrl ?? null);
+    setEventDate(new Date(event.dateTime));
+  }, [eventsQuery.data, eventsQuery.isError, eventId, isEditing, navigation]);
 
   const onDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
     if (Platform.OS === "android") setShowPicker(false);
@@ -120,36 +120,10 @@ export default function AdminCreateEventScreen({ navigation, route }: AdminCreat
   };
 
   // Função para subir a imagem para o storage
-  const uploadImageAsync = async (uri: string) => {
-    if (uri.startsWith("http")) return uri; // Se já é link do Supabase, não faz nada
-    try {
-      const formData = new FormData();
-      const filename = uri.split("/").pop() || `banner-${Date.now()}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      // @ts-ignore
-      formData.append("file", {
-        uri,
-        name: filename,
-        type: match ? `image/${match[1]}` : "image/jpeg",
-      });
+  const uploadImageAsync = async (uri: string) => (isLocalFile(uri) ? uploadBanner(uri) : uri);
 
-      // Enviando para chat-content para separar de avatares de usuários
-      const res = await api.post("/uploads/chat-content", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return res.data.url;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleSalvar = async () => {
-    if (!title || !description) {
-      return Alert.alert("Erro", "Preencha o nome e a descrição.");
-    }
-
-    setLoading(true);
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async () => {
       let finalBannerUrl = banner;
 
       // Se houver uma imagem nova do celular, faz upload antes de salvar
@@ -168,24 +142,27 @@ export default function AdminCreateEventScreen({ navigation, route }: AdminCreat
         bannerUrl: finalBannerUrl,
       };
 
-      if (isEditing) {
-        await api.patch(`/events/${eventId}`, payload);
-        Alert.alert("Sucesso", "Evento atualizado!");
-      } else {
-        await api.post("/events", payload);
-        Alert.alert("Sucesso", "Evento criado!");
-      }
+      if (isEditing) await api.patch(`/events/${eventId}`, payload);
+      else await api.post("/events", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "events"] });
+      showAlert("Sucesso", isEditing ? "Evento atualizado!" : canPublish ? "Evento criado!" : "Sugestão enviada para aprovação!");
       navigation.goBack();
-    } catch (caught) {
+    },
+    onError: (caught) => {
       const error = caught as ApiError;
-      Alert.alert(
-        "Erro",
-        error.response?.data?.message || error.message || "Falha na operação.",
-      );
-    } finally {
-      setLoading(false);
-    }
+      showAlert("Erro", error.response?.data?.message || error.message || "Falha na operação.");
+    },
+  });
+
+  const handleSalvar = () => {
+    if (!title || !description) return showAlert("Erro", "Preencha o nome e a descrição.");
+    saveMutation.mutate();
   };
+
+  const loading = saveMutation.isPending || (isEditing && eventsQuery.isLoading);
 
   const pickBanner = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -202,11 +179,11 @@ export default function AdminCreateEventScreen({ navigation, route }: AdminCreat
     setShowPicker(true);
   };
 
-  const submitLabel = isEditing ? "Salvar alterações" : isAdmin ? "Publicar evento" : "Enviar sugestão";
+  const submitLabel = isEditing ? "Salvar alterações" : canPublish ? "Publicar evento" : "Enviar sugestão";
 
   return (
     <Screen>
-      <ScreenHeader title={isEditing ? "Editar evento" : isAdmin ? "Novo evento" : "Sugerir evento"} />
+      <ScreenHeader title={isEditing ? "Editar evento" : canPublish ? "Novo evento" : "Sugerir evento"} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
           <Pressable

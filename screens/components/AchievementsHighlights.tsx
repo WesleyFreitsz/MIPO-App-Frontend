@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Image, Modal, ScrollView, View } from "react-native";
+import { Image, Modal, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Lock, Star, X } from "lucide-react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import {
   SCREEN_PADDING,
   SectionHeader,
   Skeleton,
+  showAlert,
 } from "../../components/ui";
 import { useTheme } from "../../theme/ThemeProvider";
 import { foregroundOn, stroke } from "../../theme/tokens";
@@ -38,6 +39,7 @@ interface Conquista {
   isObtained?: boolean;
   isHighlighted?: boolean;
   obtainedPercentage?: number | string | null;
+  progress?: { current: number; target: number } | null;
 }
 
 interface RaridadeGroup {
@@ -82,6 +84,35 @@ function normalizeRaridadeName(name: string): string {
 function raridadeTone(raridade: Raridade | null | undefined): CardTone {
   if (!raridade?.name) return "neutral";
   return RARIDADE_TONES[normalizeRaridadeName(raridade.name)] ?? "neutral";
+}
+
+const CONDITION_DESCRIPTIONS: Record<string, (target: number) => string> = {
+  "evento.checkin": (target) => `Faça check-in em ${target} ${target === 1 ? "evento" : "eventos"}.`,
+  "user.amigos": (target) => `Tenha ${target} ${target === 1 ? "amigo" : "amigos"} no Mipo.`,
+  "loja.visitas": (target) => `Faça check-in na loja ${target} ${target === 1 ? "vez" : "vezes"}.`,
+};
+
+function describeConquista(conquista: Conquista): string {
+  if (conquista.description) return conquista.description;
+  const parts = conquista.condition?.split(".") ?? [];
+  const target = Number(parts.pop());
+  const describe = CONDITION_DESCRIPTIONS[parts.join(".")];
+  if (describe && Number.isFinite(target)) return describe(target);
+  return conquista.condition ? "Conquista especial: participe para desbloquear." : "Sem descrição";
+}
+
+function ProgressBar({ current, target }: { current: number; target: number }) {
+  const { colors } = useTheme();
+  const ratio = target > 0 ? Math.min(current / target, 1) : 0;
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: target, now: current }}
+      style={{ height: 10, borderRadius: 5, borderWidth: stroke.thin, borderColor: colors.line, backgroundColor: colors.surface2, overflow: "hidden" }}
+    >
+      <View style={{ width: `${ratio * 100}%`, height: "100%", backgroundColor: colors.lime }} />
+    </View>
+  );
 }
 
 function characterFor(conquista: Conquista, index: number): CharacterName {
@@ -145,6 +176,11 @@ function ConquistaCard({ conquista, character, motion, dimmed, onPress }: Conqui
         <MipoText variant="micro" numberOfLines={2} style={{ color: foreground, textAlign: "center", marginTop: 4 }}>
           {conquista.title}
         </MipoText>
+        {dimmed && conquista.progress ? (
+          <MipoText variant="micro" style={{ color: foreground, marginTop: 2 }}>
+            {`${conquista.progress.current}/${conquista.progress.target}`}
+          </MipoText>
+        ) : null}
       </Card>
     </View>
   );
@@ -166,7 +202,7 @@ export default function AchievementsHighlights({ userId, isOwnProfile = false, t
 
   const { data: achievements = [], isLoading } = useQuery<Conquista[]>({
     queryKey: ["achievements", userId],
-    queryFn: async () => (await api.get(`/achievements?userId=${userId}`)).data,
+    queryFn: async () => (await api.get(isOwnProfile ? "/achievements/me" : `/achievements?userId=${userId}`)).data,
   });
 
   const setHighlightsMutation = useMutation({
@@ -175,7 +211,7 @@ export default function AchievementsHighlights({ userId, isOwnProfile = false, t
       queryClient.invalidateQueries({ queryKey: ["achievements", userId] });
       setSelectedAch(null);
     },
-    onError: () => Alert.alert("Erro", "Você só pode destacar até 3 conquistas."),
+    onError: () => showAlert("Erro", "Você só pode destacar até 3 conquistas."),
   });
 
   const obtainedAch = achievements.filter((a) => a.isObtained);
@@ -193,7 +229,7 @@ export default function AchievementsHighlights({ userId, isOwnProfile = false, t
       newHighlights = currentHighlights.filter((id) => id !== achId);
     } else {
       if (currentHighlights.length >= 3) {
-        Alert.alert("Limite atingido", "Você só pode destacar 3 conquistas.");
+        showAlert("Limite atingido", "Você só pode destacar 3 conquistas.");
         return;
       }
       newHighlights = [...currentHighlights, achId];
@@ -216,8 +252,7 @@ export default function AchievementsHighlights({ userId, isOwnProfile = false, t
 
   const isSelectedHighlighted = selectedAch ? highlightedAch.some((a) => a.id === selectedAch.id) : false;
   const selectedTone = raridadeTone(selectedAch?.rarity);
-  const selectedDescription =
-    selectedAch?.description || (selectedAch?.condition ? `Condição: ${selectedAch.condition}` : "Sem descrição");
+  const selectedDescription = selectedAch ? describeConquista(selectedAch) : "";
 
   return (
     <View>
@@ -282,6 +317,15 @@ export default function AchievementsHighlights({ userId, isOwnProfile = false, t
             <MipoText variant="body" color="muted" style={{ textAlign: "center" }}>
               {selectedDescription}
             </MipoText>
+
+            {!selectedAch.isObtained && selectedAch.progress ? (
+              <View style={{ alignSelf: "stretch", gap: 6 }}>
+                <MipoText variant="caption" style={{ textAlign: "center" }}>
+                  {`Progresso: ${selectedAch.progress.current} de ${selectedAch.progress.target}`}
+                </MipoText>
+                <ProgressBar current={selectedAch.progress.current} target={selectedAch.progress.target} />
+              </View>
+            ) : null}
 
             <Card flat style={{ alignSelf: "stretch" }} contentStyle={{ alignItems: "center", backgroundColor: colors.surface2 }}>
               <MipoText variant="caption">

@@ -3,7 +3,6 @@ import {
   View,
   FlatList,
   Switch,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -18,8 +17,11 @@ import {
   Pencil,
   Trash,
   Search,
+  Trophy,
 } from "lucide-react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigation } from "@react-navigation/native";
+import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../services/api";
 import {
@@ -36,9 +38,11 @@ import {
   Screen,
   ScreenHeader,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
 import { AccentName, foregroundOn, radius, stroke } from "../theme/tokens";
+import { uploadMedia, UploadEndpoint, UploadError } from "../services/uploads";
 
 const PREDEFINED_CATEGORIES = [
   "Estratégia",
@@ -83,6 +87,7 @@ function categoriesOf(game: CatalogGame): string[] {
 }
 
 export default function AdminGamesScreen() {
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const queryClient = useQueryClient();
   const { colors } = useTheme();
   const bottomReserve = useBottomReserve(false);
@@ -147,9 +152,9 @@ export default function AdminGamesScreen() {
       queryClient.invalidateQueries({ queryKey: ["games"] });
       resetForm();
       setActiveTab("list");
-      Alert.alert("Sucesso", "Jogo registrado com sucesso!");
+      showAlert("Sucesso", "Jogo registrado com sucesso!");
     },
-    onError: () => Alert.alert("Erro", "Falha ao registrar jogo."),
+    onError: () => showAlert("Erro", "Falha ao registrar jogo."),
   });
 
   const updateMutation = useMutation({
@@ -159,16 +164,16 @@ export default function AdminGamesScreen() {
       queryClient.invalidateQueries({ queryKey: ["games"] });
       resetForm();
       setActiveTab("list");
-      Alert.alert("Sucesso", "Jogo atualizado com sucesso!");
+      showAlert("Sucesso", "Jogo atualizado com sucesso!");
     },
-    onError: () => Alert.alert("Erro", "Falha ao atualizar jogo."),
+    onError: () => showAlert("Erro", "Falha ao atualizar jogo."),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/games/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["games"] });
-      Alert.alert("Excluído", "O jogo foi removido do catálogo.");
+      showAlert("Excluído", "O jogo foi removido do catálogo.");
     },
   });
 
@@ -219,7 +224,7 @@ export default function AdminGamesScreen() {
   };
 
   const handleDeleteClick = (id: string) => {
-    Alert.alert(
+    showAlert(
       "Atenção",
       "Tem certeza que deseja excluir permanentemente este jogo?",
       [
@@ -252,24 +257,11 @@ export default function AdminGamesScreen() {
     if (!result.canceled) setVideoUri(result.assets[0].uri);
   };
 
-  const uploadFile = async (uri: string, endpoint: string) => {
-    const formData = new FormData();
-    const filename = uri.split("/").pop() || `file-${Date.now()}`;
-    const type =
-      endpoint === "/uploads/video"
-        ? `video/${/\.(\w+)$/.exec(filename)?.[1] || "mp4"}`
-        : `image/${/\.(\w+)$/.exec(filename)?.[1] || "jpeg"}`;
-    // @ts-ignore
-    formData.append("file", { uri, name: filename, type });
-    const res = await api.post(endpoint, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data.url;
-  };
+  const uploadFile = async (uri: string, endpoint: UploadEndpoint) => uploadMedia({ uri }, endpoint);
 
   const handleSaveGame = async () => {
     if (!newName.trim() || selectedCategories.length === 0 || !imageUri) {
-      return Alert.alert(
+      return showAlert(
         "Atenção",
         "Nome, pelo menos 1 Categoria e Imagem são obrigatórios.",
       );
@@ -304,7 +296,7 @@ export default function AdminGamesScreen() {
         createMutation.mutate(payload);
       }
     } catch (error) {
-      Alert.alert("Erro", "Falha no upload dos arquivos.");
+      showAlert("Erro", error instanceof UploadError ? error.message : "Falha no upload dos arquivos.");
     } finally {
       setIsUploading(false);
     }
@@ -426,7 +418,11 @@ export default function AdminGamesScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Acervo" subtitle={`${games.length} jogos`} />
+      <ScreenHeader
+        title="Acervo"
+        subtitle={`${games.length} jogos`}
+        right={<IconButton icon={Trophy} tone="yellow" accessibilityLabel="Configurar jogos do mês" onPress={() => navigation.navigate("AdminMonthlyGames")} />}
+      />
       <Input icon={Search} placeholder="Buscar jogo" value={searchQuery} onChangeText={setSearchQuery} />
       <FlatList
         data={filteredGames}

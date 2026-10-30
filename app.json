@@ -2,7 +2,8 @@
   "expo": {
     "name": "MipoSocial",
     "slug": "board-game-hub-mobile",
-    "version": "1.2.0",
+    "scheme": "mipo",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -33,7 +34,27 @@
           "backgroundColor": "#F6E22D"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#F6E22D"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "A Mipo usa a câmera para ler o QR code de check-in da loja.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import * as MipoAlert from "../../../components/ui/MipoAlert";
 import { act, renderHook } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../../../services/api";
@@ -14,7 +14,7 @@ const evento = { id: "e1", title: "Noite de Eurogames", dateTime: new Date().toI
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  jest.spyOn(MipoAlert, "showAlert").mockImplementation(() => undefined);
 });
 
 async function setup() {
@@ -36,7 +36,7 @@ test("falha ao confirmar avisa a pessoa", async () => {
   mockedPost.mockRejectedValueOnce(new Error("offline"));
   const { result, onChanged } = await setup();
   await act(() => result.current.toggleParticipation());
-  expect(Alert.alert).toHaveBeenCalledWith("Erro", "Não foi possível atualizar sua presença.");
+  expect(MipoAlert.showAlert).toHaveBeenCalledWith("Erro", "Não foi possível atualizar sua presença.");
   expect(onChanged).not.toHaveBeenCalled();
 });
 
@@ -63,7 +63,7 @@ test("erro no check-in mostra a mensagem do servidor", async () => {
   mockedPost.mockRejectedValueOnce({ response: { data: { message: "Check-in já realizado" } } });
   const { result, onCheckedIn } = await setup();
   await act(() => result.current.checkIn());
-  expect(Alert.alert).toHaveBeenCalledWith("Erro", "Check-in já realizado");
+  expect(MipoAlert.showAlert).toHaveBeenCalledWith("Erro", "Check-in já realizado");
   expect(onCheckedIn).not.toHaveBeenCalled();
 });
 

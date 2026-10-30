@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
-import { Alert } from "react-native";
+
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../../services/api";
 import { EventoDetail } from "../../types";
+import { showAlert } from "../../components/ui";
 
 interface EventoActionCallbacks {
   onChanged: () => void;
@@ -24,7 +25,7 @@ export function useEventoActions(evento: EventoDetail | null, { onChanged, onChe
       await api.post(`/events/${evento.id}/toggle`);
       onChanged();
     } catch {
-      Alert.alert("Erro", "Não foi possível atualizar sua presença.");
+      showAlert("Erro", "Não foi possível atualizar sua presença.");
     } finally {
       setToggling(false);
     }
@@ -40,7 +41,7 @@ export function useEventoActions(evento: EventoDetail | null, { onChanged, onChe
       onCheckedIn();
       onChanged();
     } catch (error) {
-      Alert.alert("Erro", serverMessage(error) || "Falha ao realizar check-in.");
+      showAlert("Erro", serverMessage(error) || "Falha ao realizar check-in.");
     } finally {
       setCheckingIn(false);
     }

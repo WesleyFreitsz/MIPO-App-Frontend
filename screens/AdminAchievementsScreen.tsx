@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Alert, ScrollView, Image, Pressable } from "react-native";
+import { View, ScrollView, Image, Pressable } from "react-native";
 import { Search, X, Pencil, Camera, Trash2, ChevronUp, ChevronDown } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,13 +21,15 @@ import {
   ScreenHeader,
   SegmentedControl,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
 import { useTheme } from "../theme/ThemeProvider";
 import { AccentName, stroke } from "../theme/tokens";
+import { uploadMedia, UploadError } from "../services/uploads";
 
 type Tab = "conquistas" | "raridades" | "atribuir";
 type AwardAction = "conceder" | "retirar";
-type ConditionType = "evento.checkin" | "user.amigos";
+type ConditionType = "evento.checkin" | "user.amigos" | "loja.visitas";
 
 const DEFAULT_RARITY_COLOR = "#E11D48";
 
@@ -108,6 +110,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
 const CONDITION_OPTIONS: { value: ConditionType; label: string }[] = [
   { value: "evento.checkin", label: "Eventos" },
   { value: "user.amigos", label: "Amigos" },
+  { value: "loja.visitas", label: "Visitas à loja" },
 ];
 
 const AWARD_OPTIONS: { value: AwardAction; label: string }[] = [
@@ -155,18 +158,7 @@ export default function AdminAchievementsScreen() {
 
   // Mutations
   const uploadMutation = useMutation({
-    mutationFn: async (uri: string) => {
-      const formData = new FormData();
-      const filename = uri.split("/").pop();
-      const match = /\.(\w+)$/.exec(filename || "");
-      const type = match ? `image/${match[1]}` : `image`;
-      // @ts-ignore
-      formData.append("file", { uri, name: filename, type });
-      const res = await api.post("/uploads/avatar", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return res.data.url;
-    },
+    mutationFn: (uri: string) => uploadMedia({ uri }, "/uploads/avatar"),
   });
 
   const saveAchMutation = useMutation({
@@ -191,7 +183,7 @@ export default function AdminAchievementsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["achievements"] });
       resetAchForm();
-      Alert.alert(
+      showAlert(
         "Sucesso",
         editingId ? "Conquista atualizada!" : "Conquista criada!",
       );
@@ -206,7 +198,7 @@ export default function AdminAchievementsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rarities"] });
       resetRarityForm();
-      Alert.alert(
+      showAlert(
         "Sucesso",
         editingRarityId ? "Raridade atualizada!" : "Raridade criada!",
       );
@@ -240,7 +232,7 @@ export default function AdminAchievementsScreen() {
       }
     },
     onSuccess: () => {
-      Alert.alert(
+      showAlert(
         "Sucesso",
         awardAction === "conceder"
           ? "Conquistas atribuídas com sucesso!"
@@ -272,8 +264,12 @@ export default function AdminAchievementsScreen() {
     });
 
     if (!result.canceled) {
-      const url = await uploadMutation.mutateAsync(result.assets[0].uri);
-      setForm({ ...form, icon: url });
+      try {
+        const url = await uploadMutation.mutateAsync(result.assets[0].uri);
+        setForm({ ...form, icon: url });
+      } catch (error) {
+        showAlert("Erro", error instanceof UploadError ? error.message : "Não foi possível enviar o ícone.");
+      }
     }
   };
 

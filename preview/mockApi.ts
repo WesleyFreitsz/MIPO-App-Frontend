@@ -45,7 +45,7 @@ const eventos = [
     title: "Torneio de Azul",
     description: "Inscrição com moedas. Premiação para os três primeiros.",
     dateTime: atDay(2, 15),
-    space: "SALINHA",
+    space: "SALAO",
     status: "APPROVED",
     participants: [joao, bia],
     creator: { name: "Mipo" },
@@ -110,7 +110,7 @@ const achievements = [
 ];
 
 const notifications = [
-  { id: "n1", title: "Reserva aprovada!", message: "Salinha · Sex 20h · Azul", icon: "check", isRead: false, createdAt: minutesAgo(30), data: {} },
+  { id: "n1", title: "Reserva aprovada!", message: "Torneio de Azul · Sex 20h", icon: "check", isRead: false, createdAt: minutesAgo(30), data: {} },
   { id: "n2", title: "Conquista: Rei do Catan", message: "+50 moedas", icon: "trophy", isRead: false, createdAt: minutesAgo(90), data: { achievementId: "a1" } },
   { id: "n3", title: "Torneio de Azul abriu inscrições", message: "Garanta sua vaga", icon: "calendar", isRead: true, createdAt: minutesAgo(60 * 50), data: { eventId: "e2" } },
 ];
@@ -153,13 +153,12 @@ function respond(config: InternalAxiosRequestConfig): unknown {
   if (url.startsWith("/users/")) return { ...joao, bio: "Jogo qualquer coisa com dado.", role: "USER" };
   if (url === "/finance/summary") return { totalIn: 9030, totalOut: 610, balance: 8420 };
   if (url === "/finance/transactions") return [
-    { id: "t1", type: "in", description: "Salinha · reserva", value: 40, createdAt: minutesAgo(60) },
+    { id: "t1", type: "in", description: "Torneio de Azul · inscrições", value: 40, createdAt: minutesAgo(60) },
     { id: "t2", type: "in", description: "Torneio de Azul", value: 480, createdAt: minutesAgo(60 * 30) },
     { id: "t3", type: "out", description: "Compra de jogos", value: 610, createdAt: minutesAgo(60 * 50) },
   ];
   if (url === "/rewards") return [{ id: "rw1", title: "Café grátis", price: 80, stock: 20 }, { id: "rw2", title: "1h de mesa", price: 200, stock: 8 }, { id: "rw3", title: "Camiseta Mipo", price: 900, stock: 3 }];
   if (url === "/reports") return [{ id: "rp1", reason: "spam", createdAt: minutesAgo(120), reporterUser: luana, reportedUser: { id: "x", name: "usuario123", nickname: "usuario123" }, post: { content: "Compre seguidores baratos no link..." } }];
-  if (url === "/rooms/salinha/reservations/pending") return [{ id: "rs1", userId: "ma", user: { name: "Marcos Lima" }, date: atDay(1, 0), startTime: "20:00", endTime: "22:00", totalPrice: 40, status: "pending", createdAt: minutesAgo(40) }];
   return [];
 }
 

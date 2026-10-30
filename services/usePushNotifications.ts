@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { api } from "./api";
+import { navigationRef, openNotificationTarget, parseNotificationData } from "../navigation/navigationRef";
 
 // Define como o app se comporta quando recebe notificação com ele ABERTO (foreground)
 Notifications.setNotificationHandler({
@@ -25,10 +26,12 @@ Notifications.setNotificationHandler({
   },
 });
 
+const NAVIGATION_READY_RETRY_MS = 300;
+
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
 
-  async function requestPermission() {
+  const requestPermission = useCallback(async () => {
     if (!Device.isDevice) {
       console.log("Push Notifications não funcionam em emuladores.");
       return null;
@@ -48,6 +51,13 @@ export function usePushNotifications() {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#FF231F7C",
+      });
+      await Notifications.setNotificationChannelAsync("orders", {
+        name: "Pedidos da loja",
+        importance: Notifications.AndroidImportance.MAX,
+        sound: "default",
+        vibrationPattern: [0, 400, 200, 400],
+        lightColor: "#F6E22D",
       });
     }
 
@@ -90,7 +100,38 @@ export function usePushNotifications() {
       console.log("Aviso: Falha ao obter token push.", error);
       return null;
     }
-  }
+  }, []);
 
   return { expoPushToken, requestPermission };
+}
+
+/**
+ * Registra o token assim que o usuário entra e abre a tela certa quando ele toca num push
+ * (inclusive com o app fechado). Montar uma vez, dentro do NavigationContainer, só com usuário logado.
+ */
+export function usePushNotificationsSetup() {
+  const { requestPermission } = usePushNotifications();
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const handledId = useRef<string | null>(null);
+
+  useEffect(() => {
+    requestPermission();
+  }, [requestPermission]);
+
+  useEffect(() => {
+    if (!lastResponse || lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const id = lastResponse.notification.request.identifier;
+    if (handledId.current === id) return;
+
+    const data = parseNotificationData(lastResponse.notification.request.content.data);
+    const open = () => {
+      if (!navigationRef.isReady()) return false;
+      handledId.current = id;
+      openNotificationTarget(data, (name, params) => navigationRef.navigate(name, params));
+      return true;
+    };
+    if (open()) return;
+    const timer = setTimeout(open, NAVIGATION_READY_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [lastResponse]);
 }

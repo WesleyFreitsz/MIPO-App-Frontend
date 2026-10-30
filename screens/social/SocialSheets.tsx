@@ -8,6 +8,7 @@ import { SocialUser } from "./socialFormat";
 
 export interface ReportSheetProps {
   visible: boolean;
+  title?: string;
   reason: string;
   image: string | null;
   sending: boolean;
@@ -17,12 +18,12 @@ export interface ReportSheetProps {
   onClose: () => void;
 }
 
-export function ReportSheet({ visible, reason, image, sending, onChangeReason, onPickImage, onSubmit, onClose }: ReportSheetProps) {
+export function ReportSheet({ visible, title = "Denunciar post", reason, image, sending, onChangeReason, onPickImage, onSubmit, onClose }: ReportSheetProps) {
   const { colors } = useTheme();
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <MipoText variant="screenTitle" style={{ fontSize: 22, marginBottom: 10 }}>
-        Denunciar post
+        {title}
       </MipoText>
       <Input placeholder="Qual o motivo da denúncia?" value={reason} onChangeText={onChangeReason} multiline containerStyle={{ minHeight: 100 }} />
       <Button label="Anexar prova (opcional)" icon={Camera} variant="ghost" onPress={onPickImage} style={{ marginTop: 10 }} />
@@ -78,11 +79,13 @@ export interface AddFriendsSheetProps {
   query: string;
   users: SocialUser[];
   onChangeQuery: (query: string) => void;
+  searching: boolean;
   onAdd: (user: SocialUser) => void;
+  onOpenProfile: (user: SocialUser) => void;
   onClose: () => void;
 }
 
-export function AddFriendsSheet({ visible, query, users, onChangeQuery, onAdd, onClose }: AddFriendsSheetProps) {
+export function AddFriendsSheet({ visible, query, users, searching, onChangeQuery, onAdd, onOpenProfile, onClose }: AddFriendsSheetProps) {
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <MipoText variant="screenTitle" style={{ fontSize: 22, marginBottom: 10 }}>
@@ -94,14 +97,21 @@ export function AddFriendsSheet({ visible, query, users, onChangeQuery, onAdd, o
         keyExtractor={(user) => user.id}
         style={{ marginTop: 12, maxHeight: 380 }}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={<MipoText variant="caption">Ninguém encontrado com esse nome.</MipoText>}
+        ListEmptyComponent={<MipoText variant="caption">{searching ? "Buscando..." : "Ninguém encontrado com esse nome."}</MipoText>}
         renderItem={({ item }) => (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 }}>
-            <Avatar id={item.id} name={item.name} uri={item.avatarUrl} />
-            <View style={{ flex: 1 }}>
-              <MipoText variant="cardTitle">{item.name}</MipoText>
-              {item.nickname ? <MipoText variant="micro">{`@${item.nickname}`}</MipoText> : null}
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Ver perfil de ${item.name}`}
+              onPress={() => onOpenProfile(item)}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <Avatar id={item.id} name={item.name} uri={item.avatarUrl} />
+              <View style={{ flex: 1 }}>
+                <MipoText variant="cardTitle">{item.name}</MipoText>
+                {item.nickname ? <MipoText variant="micro">{`@${item.nickname}`}</MipoText> : null}
+              </View>
+            </Pressable>
             <IconButton icon={UserPlus} tone="red" accessibilityLabel={`Adicionar ${item.name}`} onPress={() => onAdd(item)} size={36} />
           </View>
         )}

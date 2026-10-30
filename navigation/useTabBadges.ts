@@ -27,23 +27,26 @@ export function deriveTabBadges(
   return { social, avisos: unreadNotifications + pendingRequests };
 }
 
+// Chats chegam pelo socket (chat:list-update); o intervalo longo é só rede de segurança.
+const FALLBACK_REFETCH_MS = 60_000;
+
 export function useTabBadges(): TabBadges {
   const { data: chats } = useQuery<ChatsResponse>({
     queryKey: ["chats"],
     queryFn: async () => (await api.get("/chats")).data,
-    refetchInterval: 5000,
+    refetchInterval: FALLBACK_REFETCH_MS,
   });
 
   const { data: notifications } = useQuery<NotificationsResponse>({
     queryKey: ["notifications"],
     queryFn: async () => (await api.get("/notifications", { params: { skip: 0, take: 50 } })).data,
-    refetchInterval: 5000,
+    refetchInterval: FALLBACK_REFETCH_MS,
   });
 
   const { data: requests } = useQuery<FriendRequestsResponse>({
     queryKey: ["friendRequests", "pending_global"],
     queryFn: async () => (await api.get("/friends/requests/pending")).data,
-    refetchInterval: 5000,
+    refetchInterval: FALLBACK_REFETCH_MS,
   });
 
   return deriveTabBadges(chats, notifications, requests);

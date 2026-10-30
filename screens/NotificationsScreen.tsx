@@ -1,22 +1,27 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, RefreshControl, SectionList, View } from "react-native";
+import { Pressable, RefreshControl, SectionList, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Calendar, Check, Info, LucideIcon, ShieldAlert, Trophy } from "lucide-react-native";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, Calendar, Check, Info, LucideIcon, Settings2, ShieldAlert, Trophy } from "lucide-react-native";
 import { api } from "../services/api";
-import { usePushNotifications } from "../services/usePushNotifications";
+import { notificationPreferenceLabel } from "../services/notificationPreferences";
+import { openNotificationTarget, parseNotificationData } from "../navigation/navigationRef";
 import {
   Avatar,
+  BottomSheet,
   Button,
   Card,
   Character,
+  Checkbox,
   EmptyState,
   IconBox,
+  IconButton,
   MipoText,
   Screen,
   SegmentedControl,
   useBottomReserve,
+  showAlert,
 } from "../components/ui";
 import { StaggerIn } from "../motion/StaggerIn";
 import { useTheme } from "../theme/ThemeProvider";
@@ -46,11 +51,9 @@ interface NotificationItem {
   data?: unknown;
 }
 
-interface NotificationData {
-  userId?: string;
-  eventId?: string;
-  postId?: string;
-  achievementId?: string;
+interface NotificationPreference {
+  type: string;
+  enabled: boolean;
 }
 
 type AvisosTab = "requests" | "notifications";
@@ -64,17 +67,6 @@ const iconByName: Record<string, { icon: LucideIcon; tone: AccentName }> = {
   "x-circle": { icon: Info, tone: "red" },
   trophy: { icon: Trophy, tone: "yellow" },
 };
-
-function parseData(raw: unknown): NotificationData {
-  if (typeof raw === "string") {
-    try {
-      return (JSON.parse(raw) as NotificationData) ?? {};
-    } catch {
-      return {};
-    }
-  }
-  return (raw as NotificationData) ?? {};
-}
 
 function groupByPeriod(items: NotificationItem[], now: Date = new Date()) {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -97,10 +89,9 @@ export default function NotificationsScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { colors } = useTheme();
   const bottomReserve = useBottomReserve(true);
-  const { requestPermission } = usePushNotifications();
+  const [preferencesVisible, setPreferencesVisible] = useState(false);
 
   useEffect(() => {
-    requestPermission();
     if (activeTab === "notifications") {
       api.patch("/notifications/read-all").catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -144,7 +135,7 @@ export default function NotificationsScreen() {
     onSuccess: () => {
       refetchReqs();
       queryClient.invalidateQueries({ queryKey: ["friends"] });
-      Alert.alert("Sucesso", "Solicitação aceita!");
+      showAlert("Sucesso", "Solicitação aceita!");
     },
   });
 
@@ -155,17 +146,49 @@ export default function NotificationsScreen() {
     },
   });
 
+  const { data: preferences = [] } = useQuery<NotificationPreference[]>({
+    queryKey: ["notifications", "preferences"],
+    queryFn: async () => (await api.get("/notifications/preferences")).data,
+    enabled: preferencesVisible,
+  });
+
+  const updatePreferenceMutation = useMutation({
+    mutationFn: (preference: NotificationPreference) => api.patch("/notifications/preferences", preference),
+    onSuccess: (response) => queryClient.setQueryData(["notifications", "preferences"], response.data),
+    onError: () => showAlert("Erro", "Não foi possível salvar a preferência."),
+  });
+
+  const deleteNotificationMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/notifications/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  const clearNotificationsMutation = useMutation({
+    mutationFn: () => api.delete("/notifications"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  const confirmDelete = (notification: NotificationItem) =>
+    showAlert("Apagar aviso", "Quer apagar este aviso?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Apagar", style: "destructive", onPress: () => deleteNotificationMutation.mutate(notification.id) },
+    ]);
+
+  const confirmClearAll = () =>
+    showAlert("Limpar avisos", "Apagar todos os seus avisos?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Limpar", style: "destructive", onPress: () => clearNotificationsMutation.mutate() },
+    ]);
+
   const onRefresh = () => {
     refetchReqs();
     refetchNotifs();
   };
 
   const openNotification = (notification: NotificationItem) => {
-    const data = parseData(notification.data);
-    if (data.userId) navigation.navigate("PlayerProfile", { userId: data.userId });
-    else if (data.eventId) navigation.navigate("EventsList");
-    else if (data.postId) navigation.navigate("Social", { postId: data.postId, t: Date.now() });
-    else if (data.achievementId || notification.icon === "trophy" || notification.title?.toLowerCase().includes("conquista"))
+    const navigate = (name: string, params?: object) => navigation.navigate(name, params);
+    if (openNotificationTarget(parseNotificationData(notification.data), navigate)) return;
+    if (notification.icon === "trophy" || notification.title?.toLowerCase().includes("conquista"))
       navigation.navigate("Perfil", { openAchievements: Date.now() });
   };
 
@@ -186,7 +209,10 @@ export default function NotificationsScreen() {
         <MipoText variant="screenTitle" accessibilityRole="header">
           Avisos
         </MipoText>
-        <Character name="carta2" size={64} motion="wiggle" />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <IconButton icon={Settings2} accessibilityLabel="Preferências de notificação" onPress={() => setPreferencesVisible(true)} />
+          <Character name="carta2" size={64} motion="wiggle" />
+        </View>
       </View>
 
       <SegmentedControl
@@ -210,6 +236,11 @@ export default function NotificationsScreen() {
           if (activeTab === "notifications" && hasNextNotifs && !isFetchingNotifs) fetchNextNotifs();
         }}
         onEndReachedThreshold={0.5}
+        ListHeaderComponent={
+          activeTab === "notifications" && notifications.length > 0 ? (
+            <Button label="Limpar tudo" size="sm" variant="ghost" onPress={confirmClearAll} style={{ alignSelf: "flex-end" }} />
+          ) : undefined
+        }
         renderSectionHeader={({ section }) =>
           section.title ? (
             <MipoText variant="label" style={{ marginTop: 6 }}>
@@ -259,7 +290,9 @@ export default function NotificationsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={[notification.title, notification.message].filter(Boolean).join(". ")}
+                accessibilityHint="Toque e segure para apagar"
                 onPress={() => openNotification(notification)}
+                onLongPress={() => confirmDelete(notification)}
               >
                 <Card contentStyle={{ flexDirection: "row", alignItems: "center", gap: 10, opacity: notification.isRead ? 0.85 : 1 }}>
                   <IconBox icon={visual.icon} tone={visual.tone} />
@@ -275,6 +308,25 @@ export default function NotificationsScreen() {
           );
         }}
       />
+
+      <BottomSheet visible={preferencesVisible} onClose={() => setPreferencesVisible(false)}>
+        <MipoText variant="section">Quais avisos chegam no celular?</MipoText>
+        <MipoText variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>
+          Os desligados continuam aparecendo aqui na aba Avisos.
+        </MipoText>
+        <View style={{ gap: 12 }}>
+          {preferences.map((preference) => (
+            <View key={preference.type} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Checkbox
+                accessibilityLabel={notificationPreferenceLabel(preference.type)}
+                checked={preference.enabled}
+                onChange={(enabled) => updatePreferenceMutation.mutate({ type: preference.type, enabled })}
+              />
+              <MipoText variant="body">{notificationPreferenceLabel(preference.type)}</MipoText>
+            </View>
+          ))}
+        </View>
+      </BottomSheet>
     </Screen>
   );
 }
